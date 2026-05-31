@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <title>QuickTrimmer OG Snapshot (1200×630)</title>
+  <!--
+    Canonical OG-image template. Regenerates public/og-image.png (1200x630).
+    How: open this file in Chrome -> DevTools -> select the #og element ->
+    "Capture node screenshot" -> save as ../public/og-image.png -> redeploy.
+    window._ogReady = true is set once the waveform has drawn (headless capture).
+    (Supersedes the old root-level og-preview.html, which was the same design
+    with extra on-screen hints.)
+  -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {

@@ -80,7 +80,7 @@ public/
 
 vercel.json          # COOP/COEP ヘッダ、framework 設定
 vite.config.js       # dev/preview に COOP/COEP、ffmpeg を optimizeDeps 除外
-og-preview.html      # OGP 画像作成用テンプレ(プロジェクトルート、デプロイされない)
+tools/og-snapshot.html # OGP 画像作成用テンプレ（正本。スクショ→public/og-image.png、デプロイされない）
 ```
 
 ---
