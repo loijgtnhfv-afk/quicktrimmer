@@ -169,7 +169,16 @@ async function loadFile(file) {
     }
   } catch (err) {
     console.error(err);
-    setStatus('読み込みエラー: ' + err.message);
+    if (err && (err.message === 'UNSUPPORTED_MEDIA' || err.message === 'LOAD_TIMEOUT')) {
+      setStatus('このファイル形式はブラウザで再生できないため読み込めませんでした（.avi や一部の .mkv など）。MP4 / WebM / MOV に変換してからお試しください。');
+    } else {
+      setStatus('読み込みエラー: ' + (err.message || err));
+    }
+    // Reset so the player doesn't sit on a broken/blank source and the user can
+    // pick another file.
+    if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); video.load(); }
+    currentFile = null;
+    playerCard.classList.add('empty');
   }
 }
 

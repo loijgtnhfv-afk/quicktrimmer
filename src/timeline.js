@@ -192,9 +192,24 @@ export async function initTimeline(file, video, onChange) {
   // before the restore prompt has a chance to read it).
   notify({ initial: true });
 
-  await new Promise((resolve) => {
-    if (video.readyState >= 1) resolve();
-    else video.addEventListener('loadedmetadata', resolve, { once: true });
+  await new Promise((resolve, reject) => {
+    if (video.readyState >= 1) return resolve();
+    // The element may already have errored (e.g. .avi: the browser can't play
+    // the container) before we attach the listener.
+    if (video.error) return reject(new Error('UNSUPPORTED_MEDIA'));
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener('loadedmetadata', onLoaded);
+      video.removeEventListener('error', onError);
+    };
+    const onLoaded = () => { if (settled) return; settled = true; cleanup(); resolve(); };
+    const onError = () => { if (settled) return; settled = true; cleanup(); reject(new Error('UNSUPPORTED_MEDIA')); };
+    // Backstop: some browsers neither fire 'error' nor 'loadedmetadata' for an
+    // unsupported file — don't let the UI hang on "解析中" forever.
+    const timer = setTimeout(() => { if (settled) return; settled = true; cleanup(); reject(new Error('LOAD_TIMEOUT')); }, 15000);
+    video.addEventListener('loadedmetadata', onLoaded, { once: true });
+    video.addEventListener('error', onError, { once: true });
   });
   duration = video.duration;
   viewport = { start: 0, end: duration };
