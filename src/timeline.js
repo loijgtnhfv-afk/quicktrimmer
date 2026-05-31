@@ -462,13 +462,40 @@ function onDown(e) {
   seekVideoToX(e.clientX);
 }
 
+// Coalesced video scrubbing. Setting video.currentTime on every mousemove floods
+// the decoder with seeks it can't keep up with — very visible when dragging
+// backwards (a backward seek must re-decode from the previous keyframe). Instead
+// we keep only the LATEST target time and apply it at most once per animation
+// frame, and never while a previous seek is still in flight. This makes the
+// preview follow the cursor smoothly in both directions.
+let pendingSeekTime = null;
+let seekRafQueued = false;
+
+function pumpSeek() {
+  seekRafQueued = false;
+  if (pendingSeekTime == null || !videoEl) return;
+  if (videoEl.seeking) { queueSeek(); return; } // a seek is still running — retry next frame
+  const t = pendingSeekTime;
+  pendingSeekTime = null;
+  // fastSeek (Safari/Firefox) is a much cheaper keyframe-accurate scrub; Chrome
+  // lacks it, so the coalescing above is what keeps Chrome smooth.
+  if (typeof videoEl.fastSeek === 'function') videoEl.fastSeek(t);
+  else videoEl.currentTime = t;
+}
+
+function queueSeek() {
+  if (seekRafQueued) return;
+  seekRafQueued = true;
+  requestAnimationFrame(pumpSeek);
+}
+
 function seekVideoToX(clientX) {
   if (!videoEl) return;
   const rect = container.getBoundingClientRect();
   const x = clamp(clientX - rect.left, 0, rect.width);
-  const t = xToTime(x, rect);
+  pendingSeekTime = clamp(xToTime(x, rect), 0, duration);
   if (!videoEl.paused) videoEl.pause();
-  videoEl.currentTime = clamp(t, 0, duration);
+  queueSeek();
 }
 
 function onMove(e) {
