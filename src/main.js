@@ -20,6 +20,13 @@ import { exportVideo, cancelExport } from './exporter.js';
 import { detectSilences } from './silence.js';
 import { saveProject, loadProject, downloadProjectJson, parseProjectJson } from './storage.js';
 import { getSettings, saveSettings, resetSettings, DEFAULTS } from './settings.js';
+import { inject as injectAnalytics } from '@vercel/analytics';
+import { injectSpeedInsights } from '@vercel/speed-insights';
+
+// Vercel Web Analytics + Speed Insights (RUM). Same-origin /_vercel/* scripts,
+// so COEP require-corp is unaffected. No-op off Vercel; console debug in dev.
+injectAnalytics();
+injectSpeedInsights();
 
 // --- Element refs ---
 const fileInput = document.getElementById('fileInput');
