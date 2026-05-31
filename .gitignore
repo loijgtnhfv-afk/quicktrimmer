@@ -7,3 +7,6 @@ dist/
 .vite/
 
 .vercel
+
+# smoke-test 用に生成したテスト動画（巨大バイナリ・コミットしない）
+test-fixtures/
