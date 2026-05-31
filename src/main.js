@@ -80,6 +80,13 @@ let markInTime = null;
 let settings = getSettings();
 let exporting = false;
 let deferredInstallPrompt = null;
+let autosaveWarned = false;
+
+// Accept any video/* MIME, but fall back to a known video extension: many real
+// files (notably .mkv/.avi on Windows, especially when drag-dropped) report an
+// empty or non-video MIME. The exporter re-encodes any non-mp4 container, so
+// honoring the extension here keeps the load gate and export pipeline consistent.
+const VIDEO_EXT_RE = /\.(mp4|m4v|mov|mkv|avi|webm|m4a|flv|wmv|mpg|mpeg|m2ts|mts|ts|3gp|ogv|ogg)$/i;
 
 // --- Initial settings application ---
 function applySettingsToUI() {
@@ -113,10 +120,12 @@ function showCancelBtn(show) { cancelExportBtn.hidden = !show; }
 
 // --- Load file ---
 async function loadFile(file) {
-  if (!file || !file.type.startsWith('video/')) {
+  const looksLikeVideo = file && (file.type.startsWith('video/') || VIDEO_EXT_RE.test(file.name));
+  if (!looksLikeVideo) {
     setStatus('動画ファイルを選んでください。');
     return;
   }
+  autosaveWarned = false;
   currentFile = file;
   video.src = URL.createObjectURL(file);
   playerCard.classList.remove('empty');
@@ -137,7 +146,11 @@ async function loadFile(file) {
       // Skip persistence during the initial reset — otherwise we'd clobber the
       // saved project for this filename before the restore prompt can fire.
       if (!opts.initial) {
-        saveProject(file.name, { ranges, duration: video.duration });
+        const ok = saveProject(file.name, { ranges, duration: video.duration });
+        if (!ok && !autosaveWarned) {
+          autosaveWarned = true;
+          setStatus('⚠ 自動保存に失敗しました（ストレージ容量不足またはブラウザ設定）。書き出しは引き続き可能です。');
+        }
       }
     });
     silenceBtn.disabled = !getHasAudio();

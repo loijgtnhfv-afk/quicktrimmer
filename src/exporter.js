@@ -250,8 +250,24 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   const outExt = format === 'webm' ? '.webm' : (format === 'gif' ? '.gif' : '.mp4');
   args.push('-y', 'output' + outExt);
 
+  // Forward ffmpeg's fine-grained progress for the (potentially long) re-encode.
+  // Scoped to this function only: the stream-copy path drives its own coarse,
+  // monotonic onProgress, so letting both sources write the same bar there made
+  // it oscillate. Removed in finally so it never leaks onto a later export.
+  const progressHandler = ({ progress }) => {
+    if (typeof progress === 'number' && progress >= 0) {
+      onProgress(Math.max(0, Math.min(1, progress)));
+    }
+  };
+  ff.on('progress', progressHandler);
+
   status('再エンコード中... (時間かかります)');
-  const code = await ff.exec(args);
+  let code;
+  try {
+    code = await ff.exec(args);
+  } finally {
+    try { ff.off('progress', progressHandler); } catch (_) {}
+  }
   if (code !== 0) throw new Error(`再エンコードに失敗 (exit ${code})`);
   const data = await ff.readFile('output' + outExt);
   try { await ff.deleteFile('output' + outExt); } catch (_) {}
@@ -277,13 +293,6 @@ export async function exportVideo(file, ranges, duration, options = {}) {
   let ff;
   try { ff = await getFFmpeg(); }
   catch (err) { throw new Error('FFmpeg の読み込みに失敗: ' + (err.message || err)); }
-
-  const progressHandler = ({ progress }) => {
-    if (typeof progress === 'number' && progress >= 0) {
-      onProgress(Math.max(0, Math.min(1, progress)));
-    }
-  };
-  ff.on('progress', progressHandler);
 
   try {
     const ext = getExt(file.name);
@@ -333,10 +342,17 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     outputBlob = new Blob([data.buffer], { type: mime });
     return URL.createObjectURL(outputBlob);
   } catch (err) {
+    const msg = (err && err.message) ? err.message : String(err);
+    // A cancel during re-encode rejects ff.exec() with a terminate error rather
+    // than our sentinel; normalize it so the UI shows the cancel message instead
+    // of a failure dump. (The stream-copy path is already handled by
+    // throwIfCancelled before reaching here.)
+    if (cancelRequested || msg.includes('__CANCELLED__') || msg.includes('called FFmpeg.terminate()')) {
+      cancelRequested = false;
+      throw new Error('__CANCELLED__');
+    }
     const tail = tailLog(20);
-    throw new Error(`${err.message || err}\n\n--- FFmpeg log (最後の20行) ---\n${tail || '(ログなし)'}`);
-  } finally {
-    try { ff.off('progress', progressHandler); } catch (_) {}
+    throw new Error(`${msg}\n\n--- FFmpeg log (最後の20行) ---\n${tail || '(ログなし)'}`);
   }
 }
 

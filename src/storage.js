@@ -6,8 +6,11 @@ function key(filename) {
   return PREFIX + filename;
 }
 
+// Returns true on success, false if the write failed (quota exceeded, storage
+// disabled in private mode, etc.) so callers can surface the failure instead of
+// silently losing autosave data.
 export function saveProject(filename, data) {
-  if (!filename) return;
+  if (!filename) return false;
   try {
     const payload = {
       filename,
@@ -16,8 +19,10 @@ export function saveProject(filename, data) {
       ...data,
     };
     localStorage.setItem(key(filename), JSON.stringify(payload));
+    return true;
   } catch (err) {
     console.warn('saveProject failed:', err);
+    return false;
   }
 }
 

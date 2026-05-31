@@ -126,9 +126,11 @@ function placeRangeInto(currentRanges, newR) {
       cleaned.push(r);
       continue;
     }
-    // Different type/speed — subtract newR's bounds from r
-    if (newR.start > r.start) cleaned.push({ ...r, end: newR.start });
-    if (newR.end < r.end) cleaned.push({ ...r, start: newR.end });
+    // Different type/speed — subtract newR's bounds from r. Only keep carved
+    // remainders that meet MIN_RANGE_SECONDS so we don't leave un-grabbable
+    // sub-0.05s slivers (the invariant every other range path enforces).
+    if (newR.start - r.start >= MIN_RANGE_SECONDS) cleaned.push({ ...r, end: newR.start });
+    if (r.end - newR.end >= MIN_RANGE_SECONDS) cleaned.push({ ...r, start: newR.end });
   }
   cleaned.push(newR);
   return mergeRanges(cleaned);
@@ -492,8 +494,11 @@ function onMove(e) {
     } else {
       r.end = clamp(t, r.start + MIN_RANGE_SECONDS, duration);
     }
+    // Live visual feedback only — do NOT notify() here. notify() persists to
+    // localStorage and rebuilds the ranges list + minimap, which on every
+    // mousemove (~60-120Hz) janks the drag and hammers storage. onUp commits
+    // the final state once (renderRanges + pushHistory + notify).
     renderRanges();
-    notify();
     seekVideoToX(e.clientX);
   }
 }
