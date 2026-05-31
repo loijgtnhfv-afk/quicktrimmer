@@ -1,0 +1,5 @@
+# Local smoke-test media — never deploy (1.7GB, blows the 100MB upload limit)
+test-fixtures/
+
+# Built locally only; Vercel builds from source
+dist/
