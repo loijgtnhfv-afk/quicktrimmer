@@ -112,7 +112,9 @@ public/
 
 ## ライセンス
 
-MIT (TBD)
+[GPL-3.0-or-later](LICENSE)。
+
+QuickTrimmer は動画処理に **ffmpeg.wasm**（`@ffmpeg/core`）を同梱しており、この ffmpeg ビルドは `libx264` / `libx265` を含む **GPL** ビルドです。これがブラウザへ配布されるため、本プロジェクト全体も GPL-3.0 で配布します。ffmpeg のソースは [ffmpegwasm/ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) および [ffmpeg.org](https://ffmpeg.org/) から入手できます。
 
 ## ロードマップ
 
