@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>QuickTrimmer OG Snapshot (1200×630)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .og {
+      width: 1200px;
+      height: 630px;
+      background: linear-gradient(135deg, #F4F2E9 0%, #EAE5D0 100%);
+      font-family: -apple-system, "Segoe UI", "Inter", "Yu Gothic UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      padding: 56px 64px 44px;
+      display: flex;
+      flex-direction: column;
+      color: #29302B;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .deco {
+      position: absolute;
+      bottom: -60px;
+      right: -60px;
+      opacity: 0.05;
+      width: 360px;
+      height: 360px;
+      color: #C15F3C;
+      transform: rotate(-15deg);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-bottom: 8px;
+    }
+    .logo-mark {
+      width: 72px;
+      height: 72px;
+      color: #C15F3C;
+      flex-shrink: 0;
+    }
+    .brand h1 {
+      font-size: 64px;
+      font-weight: 800;
+      letter-spacing: -1.4px;
+      line-height: 1;
+      color: #1A1F1B;
+    }
+    .brand .tagline {
+      font-size: 26px;
+      color: #C15F3C;
+      font-weight: 700;
+      margin-top: 8px;
+      letter-spacing: -0.2px;
+    }
+
+    .description {
+      font-size: 22px;
+      color: #5D5B53;
+      line-height: 1.5;
+      margin: 18px 0 0 0;
+      font-weight: 500;
+    }
+    .description strong {
+      color: #29302B;
+      font-weight: 700;
+    }
+
+    .timeline-mock {
+      background: #FAF8F1;
+      border: 1px solid #DDD8C7;
+      border-radius: 10px;
+      box-shadow: 0 4px 14px rgba(60, 50, 30, 0.08);
+      margin: 28px 0 26px;
+      position: relative;
+      overflow: hidden;
+      height: 130px;
+    }
+    .wave-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .cut {
+      position: absolute;
+      top: 0; bottom: 0;
+      background: rgba(193, 95, 60, 0.22);
+      border-left: 3px solid #C15F3C;
+      border-right: 3px solid #C15F3C;
+    }
+    .ph {
+      position: absolute;
+      top: -3px; bottom: -3px;
+      width: 2.5px;
+      background: #29302B;
+      border-radius: 1px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.4);
+    }
+    .tick-label {
+      position: absolute;
+      top: 6px;
+      font-size: 11px;
+      color: #87867F;
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-weight: 600;
+    }
+
+    .features {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .feature {
+      background: #FFFFFF;
+      border: 1px solid #DDD8C7;
+      border-radius: 999px;
+      padding: 12px 22px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #29302B;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 2px 4px rgba(60, 50, 30, 0.06);
+    }
+    .feature .ico {
+      font-size: 20px;
+    }
+
+    .url {
+      margin-left: auto;
+      font-size: 18px;
+      color: #87867F;
+      font-weight: 700;
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      letter-spacing: 0.2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="og" id="og">
+    <div class="header">
+      <svg class="logo-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="6" r="3"/>
+        <circle cx="6" cy="18" r="3"/>
+        <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+        <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+        <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+      </svg>
+      <div class="brand">
+        <h1>QuickTrimmer</h1>
+        <div class="tagline">中間カットを、ドラッグだけで。</div>
+      </div>
+    </div>
+
+    <p class="description">
+      動画の<strong>真ん中をスパッとカット</strong>。<br>
+      ブラウザだけで完結 — アップロードなし・再エンコードなし・無料。
+    </p>
+
+    <div class="timeline-mock">
+      <canvas class="wave-canvas" id="waveCanvas" width="1072" height="130"></canvas>
+      <div class="tick-label" style="left: 12px;">0:00</div>
+      <div class="tick-label" style="left: 25%;">0:30</div>
+      <div class="tick-label" style="left: 50%;">1:00</div>
+      <div class="tick-label" style="left: 75%;">1:30</div>
+      <div class="tick-label" style="right: 12px;">2:00</div>
+      <div class="cut" style="left: 18%; width: 9%;"></div>
+      <div class="cut" style="left: 48%; width: 14%;"></div>
+      <div class="cut" style="left: 78%; width: 6%;"></div>
+      <div class="ph" style="left: 35%;"></div>
+    </div>
+
+    <div class="features">
+      <div class="feature"><span class="ico">⚡</span> 高速書き出し</div>
+      <div class="feature"><span class="ico">🔒</span> アップロード不要</div>
+      <div class="feature"><span class="ico">💯</span> 完全無料</div>
+      <div class="url">quicktrimmer.vercel.app</div>
+    </div>
+
+    <svg class="deco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="6" r="3"/>
+      <circle cx="6" cy="18" r="3"/>
+      <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+      <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+      <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+    </svg>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('waveCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const mid = H / 2;
+
+    ctx.fillStyle = '#FAF8F1';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = 'rgba(60, 60, 50, 0.10)';
+    ctx.lineWidth = 1;
+    for (let p of [0.25, 0.5, 0.75]) {
+      const x = Math.round(W * p) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+
+    let s = 1234567;
+    function r() { s = (s * 9301 + 49297) % 233280; return s / 233280; }
+
+    const numBars = 360;
+    const barW = W / numBars;
+    ctx.fillStyle = '#6B6862';
+    for (let i = 0; i < numBars; i++) {
+      const pos = i / numBars;
+      let baseAmp;
+      if ((pos > 0.05 && pos < 0.28) || (pos > 0.42 && pos < 0.66) || (pos > 0.76 && pos < 0.95)) {
+        baseAmp = 0.45 + r() * 0.45;
+      } else {
+        baseAmp = 0.08 + r() * 0.18;
+      }
+      const env = Math.sin(pos * Math.PI * 6) * 0.15 + 0.85;
+      const amp = Math.min(0.95, baseAmp * env);
+      const h = amp * (H * 0.85);
+      ctx.fillRect(i * barW, mid - h / 2, Math.max(1, barW - 0.5), h);
+    }
+
+    // Mark ready for headless screenshot tooling
+    window._ogReady = true;
+  </script>
+</body>
+</html>

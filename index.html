@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuickTrimmer — 動画の中間カットを一瞬で</title>
+    <meta name="description" content="ブラウザだけで完結する動画トリミング。タイムラインを左ドラッグするだけで中間カット、無音自動検出、倍速、再エンコードなしの高速書き出し。アップロード不要。" />
+    <meta name="keywords" content="動画トリミング, 動画カット, 動画編集, ブラウザ, ffmpeg, 無音検出, QuickTrimmer" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://quicktrimmer.vercel.app/" />
+    <meta property="og:title" content="QuickTrimmer — 動画の中間カットを一瞬で" />
+    <meta property="og:description" content="ドラッグだけで中間カット、無音自動検出、再エンコードなしの高速書き出し。ブラウザだけ・アップロード不要。" />
+    <meta property="og:image" content="https://quicktrimmer.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="ja_JP" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="QuickTrimmer — 動画の中間カットを一瞬で" />
+    <meta name="twitter:description" content="ドラッグだけで中間カット、無音自動検出、再エンコードなしの高速書き出し。" />
+    <meta name="twitter:image" content="https://quicktrimmer.vercel.app/og-image.png" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#C15F3C" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <line x1="20" y1="4" x2="8.12" y2="15.88" />
+          <line x1="14.47" y1="14.48" x2="20" y2="20" />
+          <line x1="8.12" y1="8.12" x2="12" y2="12" />
+        </svg>
+        <div class="brand-text">
+          <h1>QuickTrimmer</h1>
+          <p class="tagline">中間カットを、ドラッグだけで</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="installBtn" class="btn btn-ghost" hidden title="アプリとしてインストール">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          インストール
+        </button>
+        <label class="btn btn-ghost">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          動画を選択
+          <input type="file" id="fileInput" accept="video/*" hidden />
+        </label>
+        <button id="settingsBtn" class="btn btn-ghost icon-only" title="設定">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button id="helpBtn" class="btn btn-ghost icon-only" title="キーボードショートカット">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
+        <button id="exportBtn" class="btn btn-primary" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          書き出し
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="card player-card empty" id="playerCard">
+        <video id="player" controls></video>
+        <div id="videoMinimap">
+          <div id="minimapRanges"></div>
+          <div id="minimapPlayhead"></div>
+        </div>
+        <div id="emptyState">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="6" width="14" height="12" rx="2"/>
+            <polygon points="22 8 16 12 22 16 22 8"/>
+          </svg>
+          <h2>動画をここにドロップ</h2>
+          <p>または「動画を選択」ボタンから読み込み<br>※ ファイルはこのPCの中だけで処理されます（アップロードなし）</p>
+        </div>
+      </section>
+
+      <section class="card timeline-card" id="timelineCard">
+        <div class="toolbar">
+          <div class="toolbar-group">
+            <button id="undoBtn" class="btn btn-ghost icon-only" title="元に戻す (Ctrl+Z)" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button id="redoBtn" class="btn btn-ghost icon-only" title="やり直し (Ctrl+Shift+Z)" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+          </div>
+          <div class="toolbar-group">
+            <button id="previewBtn" class="btn btn-ghost" title="カット後をプレビュー再生 (P)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              プレビュー
+            </button>
+            <button id="silenceBtn" class="btn btn-ghost" title="無音区間を自動でカット候補に追加" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              無音検出
+            </button>
+            <button id="captureFrameBtn" class="btn btn-ghost" title="現在のフレームを画像で保存" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              フレーム保存
+            </button>
+            <button id="resetZoomBtn" class="btn btn-ghost icon-only" title="ズームをリセット">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </button>
+          </div>
+          <div class="toolbar-group toolbar-right">
+            <div class="legend">
+              <span class="legend-item"><span class="dot dot-add"></span>左ドラッグ</span>
+              <span class="legend-item"><span class="dot dot-sub"></span>右ドラッグ</span>
+              <span class="legend-item"><span class="kbd">Wheel</span> ズーム</span>
+            </div>
+          </div>
+        </div>
+        <div id="timelineWrapper">
+          <div id="timelineContainer">
+            <canvas id="waveform"></canvas>
+            <div id="selectionsLayer"></div>
+            <div id="markInLine"></div>
+            <div id="playhead"></div>
+          </div>
+          <div id="timeLabels">
+            <span id="curTime">0:00.0</span>
+            <span id="totalTime">0:00.0</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card info-card" id="infoCard">
+        <div class="export-options">
+          <label class="opt">
+            形式
+            <select id="formatSelect">
+              <option value="mp4" selected>MP4</option>
+              <option value="webm">WebM</option>
+              <option value="gif">GIF</option>
+            </select>
+          </label>
+          <label class="opt">
+            解像度
+            <select id="heightSelect">
+              <option value="original" selected>元のまま</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="360">360p</option>
+            </select>
+          </label>
+          <label class="opt-check" title="音量を統一する (-16 LUFS)">
+            <input type="checkbox" id="normalizeAudioChk" />
+            音量を揃える
+          </label>
+          <button id="saveJsonBtn" class="btn btn-ghost" title="このプロジェクトをJSON保存">プロジェクト保存</button>
+          <label class="btn btn-ghost" title="JSONからプロジェクトを復元">
+            プロジェクト読込
+            <input type="file" id="loadJsonInput" accept="application/json" hidden />
+          </label>
+        </div>
+
+        <ul id="rangesList"></ul>
+        <div id="progressWrap" hidden>
+          <div id="progressBar"><div id="progressFill"></div></div>
+          <div id="progressLabel">0%</div>
+          <button id="cancelExportBtn" hidden>キャンセル</button>
+        </div>
+        <div id="status"></div>
+      </section>
+    </main>
+
+    <div id="helpModal" class="modal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-body">
+        <header>
+          <h3>キーボードショートカット</h3>
+          <button class="btn btn-ghost icon-only" data-close>✕</button>
+        </header>
+        <div class="shortcuts">
+          <div><span class="kbd">Space</span> 再生 / 一時停止</div>
+          <div><span class="kbd">←</span> <span class="kbd">→</span> 1秒戻る / 進む（Shift で 5 秒、Ctrl で 0.1 秒）</div>
+          <div><span class="kbd">I</span> 現在位置を「開始」にマーク</div>
+          <div><span class="kbd">O</span> 現在位置で「終了」してカット範囲を追加</div>
+          <div><span class="kbd">Esc</span> マークをクリア</div>
+          <div><span class="kbd">P</span> カット後プレビュー再生 ON/OFF</div>
+          <div><span class="kbd">Ctrl</span>+<span class="kbd">Z</span> 元に戻す</div>
+          <div><span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">Z</span> やり直し</div>
+          <div><span class="kbd">Delete</span> 再生位置にある範囲を削除</div>
+          <div><span class="kbd">Wheel</span> タイムラインのズーム / <span class="kbd">Shift</span>+<span class="kbd">Wheel</span> パン</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsModal" class="modal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-body">
+        <header>
+          <h3>設定</h3>
+          <button class="btn btn-ghost icon-only" data-close>✕</button>
+        </header>
+        <div class="settings-grid">
+          <div class="setting-row">
+            <label class="row-label">無音検出 — 振幅しきい値</label>
+            <div class="row-help">これより小さい音は「無音」とみなす。小さくすると検出が緩く、大きくすると厳しくなる。</div>
+            <div class="slider-wrap">
+              <input type="range" id="silenceThreshold" min="0.005" max="0.1" step="0.001" />
+              <span class="slider-value" id="silenceThresholdVal"></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label class="row-label">無音検出 — 最小持続時間（秒）</label>
+            <div class="row-help">これより短い無音は無視する。間延びカットなら 0.5〜1.0 がおすすめ。</div>
+            <div class="slider-wrap">
+              <input type="range" id="silenceMinDuration" min="0.1" max="3.0" step="0.1" />
+              <span class="slider-value" id="silenceMinDurationVal"></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label class="row-label">無音検出 — 両端のパディング（秒）</label>
+            <div class="row-help">無音区間の前後をこの秒数だけ残す（息継ぎや微小な音を切らないため）。</div>
+            <div class="slider-wrap">
+              <input type="range" id="silencePadding" min="0" max="0.5" step="0.01" />
+              <span class="slider-value" id="silencePaddingVal"></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label class="row-label">デフォルト書き出し設定</label>
+            <div class="row-help">毎回これらが選択された状態で起動する。</div>
+            <div class="slider-wrap" style="gap:16px;">
+              <label class="opt">形式
+                <select id="defaultFormat">
+                  <option value="mp4">MP4</option>
+                  <option value="webm">WebM</option>
+                  <option value="gif">GIF</option>
+                </select>
+              </label>
+              <label class="opt">解像度
+                <select id="defaultHeight">
+                  <option value="original">元のまま</option>
+                  <option value="1080">1080p</option>
+                  <option value="720">720p</option>
+                  <option value="480">480p</option>
+                  <option value="360">360p</option>
+                </select>
+              </label>
+              <label class="check-row"><input type="checkbox" id="defaultNormalize" /> 音量を揃える</label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <button id="resetSettingsBtn" class="btn btn-ghost" style="align-self:flex-start;">設定をリセット</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
