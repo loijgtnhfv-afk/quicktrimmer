@@ -32,6 +32,8 @@ injectSpeedInsights();
 const fileInput = document.getElementById('fileInput');
 const video = document.getElementById('player');
 const exportBtn = document.getElementById('exportBtn');
+const xExportBtn = document.getElementById('xExportBtn');
+const xLimitBadge = document.getElementById('xLimitBadge');
 const rangesList = document.getElementById('rangesList');
 const statusEl = document.getElementById('status');
 const progressWrap = document.getElementById('progressWrap');
@@ -88,6 +90,10 @@ let autosaveWarned = false;
 // honoring the extension here keeps the load gate and export pipeline consistent.
 const VIDEO_EXT_RE = /\.(mp4|m4v|mov|mkv|avi|webm|m4a|flv|wmv|mpg|mpeg|m2ts|mts|ts|3gp|ogv|ogg)$/i;
 
+// X (Twitter) free-tier upload caps — used by the live limit badge (F3).
+const X_MAX_SECONDS = 140;          // 2:20
+const X_MAX_BYTES = 512 * 1024 * 1024;
+
 // --- Initial settings application ---
 function applySettingsToUI() {
   formatSelect.value = settings.defaultFormat;
@@ -143,6 +149,7 @@ async function loadFile(file) {
       renderRangesList(ranges);
       updateUndoRedo();
       updateMinimap();
+      updateXLimit();
       // Skip persistence during the initial reset — otherwise we'd clobber the
       // saved project for this filename before the restore prompt can fire.
       if (!opts.initial) {
@@ -155,6 +162,10 @@ async function loadFile(file) {
     });
     silenceBtn.disabled = !getHasAudio();
     captureFrameBtn.disabled = false;
+    // The X export is usable even with zero cuts (e.g. just making a HEVC/PS5
+    // clip X-uploadable), so enable it as soon as a file loads.
+    xExportBtn.disabled = false;
+    updateXLimit();
     setStatus('');
 
     // Offer to restore previous session
@@ -178,6 +189,8 @@ async function loadFile(file) {
     // pick another file.
     if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); video.load(); }
     currentFile = null;
+    xExportBtn.disabled = true;
+    updateXLimit();
     playerCard.classList.add('empty');
   }
 }
@@ -354,12 +367,21 @@ loadJsonInput.addEventListener('change', async (e) => {
 });
 
 // --- Export ---
-exportBtn.addEventListener('click', async () => {
-  if (!currentFile || cutRanges.length === 0) return;
+exportBtn.addEventListener('click', () => doExport({ xOptimize: false }));
+xExportBtn.addEventListener('click', () => doExport({ xOptimize: true }));
+
+async function doExport({ xOptimize }) {
+  if (!currentFile || exporting) return;
+  // Generic export needs at least one cut; the X export is also useful with zero
+  // cuts (just re-containerizing a HEVC/PS5 clip into an X-uploadable MP4).
+  if (!xOptimize && cutRanges.length === 0) return;
+
   exporting = true;
   exportBtn.disabled = true;
-  const originalLabel = exportBtn.textContent;
-  exportBtn.textContent = '処理中...';
+  xExportBtn.disabled = true;
+  const activeBtn = xOptimize ? xExportBtn : exportBtn;
+  const originalHTML = activeBtn.innerHTML;
+  activeBtn.textContent = '処理中...';
   showProgress(true);
   showCancelBtn(true);
   try {
@@ -367,6 +389,7 @@ exportBtn.addEventListener('click', async () => {
       onStatus: (msg) => { setStatus(msg); },
       onProgress: (p) => setProgress(p),
       hasAudio: getHasAudio(),
+      xOptimize,
       format: formatSelect.value,
       height: heightSelect.value,
       normalizeAudio: normalizeAudioChk.checked,
@@ -375,12 +398,16 @@ exportBtn.addEventListener('click', async () => {
     const a = document.createElement('a');
     a.href = url;
     const base = (currentFile.name || 'video').replace(/\.[^.]+$/, '');
-    const ext = formatSelect.value === 'webm' ? '.webm' : (formatSelect.value === 'gif' ? '.gif' : '.mp4');
-    a.download = `${base}_trimmed${ext}`;
+    const ext = xOptimize
+      ? '.mp4'
+      : (formatSelect.value === 'webm' ? '.webm' : (formatSelect.value === 'gif' ? '.gif' : '.mp4'));
+    a.download = xOptimize ? `${base}_for_X${ext}` : `${base}_trimmed${ext}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setStatus('完了。ダウンロードフォルダを確認してください。');
+    setStatus(xOptimize
+      ? '完了。Xにそのままアップロードできます（ダウンロードフォルダを確認）。'
+      : '完了。ダウンロードフォルダを確認してください。');
     setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
   } catch (err) {
     console.error('[export] error:', err);
@@ -402,9 +429,10 @@ exportBtn.addEventListener('click', async () => {
   } finally {
     exporting = false;
     exportBtn.disabled = cutRanges.length === 0;
-    exportBtn.textContent = originalLabel;
+    xExportBtn.disabled = !currentFile;
+    activeBtn.innerHTML = originalHTML;
   }
-});
+}
 
 cancelExportBtn.addEventListener('click', () => {
   if (!exporting) return;
@@ -497,6 +525,35 @@ function updateMinimapPlayhead() {
   const dur = video.duration || 1;
   if (!isFinite(dur) || dur === 0) return;
   minimapPlayhead.style.left = ((video.currentTime / dur) * 100) + '%';
+}
+
+// --- X upload-limit badge (F3) ---
+// Output length = full duration minus cut spans minus the time speed-ups save.
+// Size is a rough estimate (kept fraction of the source bytes) and labelled 約.
+function updateXLimit() {
+  if (!xLimitBadge) return;
+  const dur = video.duration;
+  if (!currentFile || !isFinite(dur) || dur <= 0) { xLimitBadge.hidden = true; return; }
+  let cut = 0, saved = 0;
+  for (const r of cutRanges) {
+    const span = Math.max(0, r.end - r.start);
+    if (r.type === 'speedup') saved += span - span / (r.speed || 2);
+    else cut += span;
+  }
+  const outDur = Math.max(0, dur - cut - saved);
+  const estBytes = currentFile.size * (outDur / dur);
+  const overDur = outDur > X_MAX_SECONDS;
+  const overSize = estBytes > X_MAX_BYTES;
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+  const mb = (b) => (b / 1024 / 1024).toFixed(0);
+  let tail;
+  if (overDur && overSize) tail = '⚠ 長さ・サイズ超過';
+  else if (overDur) tail = '⚠ 2:20 超過（もっとカットを）';
+  else if (overSize) tail = '⚠ 512MB 超過';
+  else tail = '✓ そのままXに投稿OK';
+  xLimitBadge.hidden = false;
+  xLimitBadge.classList.toggle('over', overDur || overSize);
+  xLimitBadge.textContent = `X(無料)目安 — 長さ ${mmss(outDur)} / 2:20 ・ サイズ 約${mb(estBytes)}MB / 512MB　${tail}`;
 }
 
 // --- Keyboard shortcuts ---

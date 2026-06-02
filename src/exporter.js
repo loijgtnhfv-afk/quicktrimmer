@@ -57,6 +57,45 @@ function getExt(name) {
   return m ? m[0].toLowerCase() : '.mp4';
 }
 
+// Probe the input's real video/audio codecs by running ffmpeg with no output:
+// it prints the stream info to the log, then exits non-zero (no output file) —
+// that exit is expected, we only want the logged stream lines. Used by the X
+// export because the file extension can't be trusted (Steam records HEVC into a
+// .mp4, PS5 records VP9/Opus into a .webm — both are silently rejected by X).
+async function probeInput(ff, inputName) {
+  // Collect THIS probe's log lines via a dedicated handler so codec detection
+  // never depends on the shared 300-entry logBuffer (which wraps/drops lines on
+  // long runs — a near-full buffer could otherwise make the scan come up empty).
+  const lines = [];
+  const collect = ({ message }) => lines.push(message);
+  ff.on('log', collect);
+  try {
+    await ff.exec(['-hide_banner', '-i', inputName]);
+  } catch (_) {
+    // No output file specified → ffmpeg errors out; stream info is already logged.
+  } finally {
+    try { ff.off('log', collect); } catch (_) {}
+  }
+  let videoCodec = null;
+  let audioCodec = null;
+  let height = null;
+  for (const ln of lines) {
+    if (!videoCodec) {
+      const v = /:\s*Video:\s*([a-z0-9_]+)/i.exec(ln);
+      if (v) {
+        videoCodec = v[1].toLowerCase();
+        const res = /\b(\d{2,5})x(\d{2,5})\b/.exec(ln); // pull WxH off the same line
+        if (res) height = Number(res[2]);
+      }
+    }
+    if (!audioCodec) {
+      const a = /:\s*Audio:\s*([a-z0-9_]+)/i.exec(ln);
+      if (a) audioCodec = a[1].toLowerCase();
+    }
+  }
+  return { videoCodec, audioCodec, height };
+}
+
 // ---------- Range planning ----------
 // Convert delete-only ranges into keep-segments (for stream-copy mode).
 function computeKeepSegmentsCutsOnly(cutRanges, duration) {
@@ -102,53 +141,62 @@ function rangesHaveSpeedup(ranges) {
 async function exportStreamCopy(ff, inputName, keep, status, onProgress) {
   const segExt = '.mp4';
   const segFiles = [];
-  for (let i = 0; i < keep.length; i++) {
-    const seg = keep[i];
-    const segName = `seg${i}${segExt}`;
-    status(`セグメント ${i + 1}/${keep.length} を抽出中（高速モード）...`);
-    onProgress((i + 0.5) / (keep.length + 1));
+  try {
+    for (let i = 0; i < keep.length; i++) {
+      const seg = keep[i];
+      const segName = `seg${i}${segExt}`;
+      status(`セグメント ${i + 1}/${keep.length} を抽出中（高速モード）...`);
+      onProgress((i + 0.5) / (keep.length + 1));
 
-    const code = await ff.exec([
-      '-ss', seg.start.toFixed(3),
-      '-to', seg.end.toFixed(3),
-      '-i', inputName,
-      '-c', 'copy',
-      '-avoid_negative_ts', 'make_zero',
-      '-map', '0',
-      '-y', segName,
-    ]);
-    if (code !== 0) throw new Error(`セグメント ${i + 1} の抽出に失敗 (exit ${code})`);
-    segFiles.push(segName);
-  }
+      const code = await ff.exec([
+        '-ss', seg.start.toFixed(3),
+        '-to', seg.end.toFixed(3),
+        '-i', inputName,
+        '-c', 'copy',
+        '-avoid_negative_ts', 'make_zero',
+        '-map', '0',
+        '-y', segName,
+      ]);
+      if (code !== 0) throw new Error(`セグメント ${i + 1} の抽出に失敗 (exit ${code})`);
+      segFiles.push(segName);
+    }
 
-  let outputName;
-  if (segFiles.length === 1) {
-    outputName = segFiles[0];
-  } else {
-    const listContent = segFiles.map((f) => `file '${f}'`).join('\n');
-    await ff.writeFile('concat.txt', new TextEncoder().encode(listContent));
-    status('セグメントを結合中...');
-    onProgress(keep.length / (keep.length + 1));
-    const code = await ff.exec([
-      '-f', 'concat',
-      '-safe', '0',
-      '-i', 'concat.txt',
-      '-c', 'copy',
-      '-movflags', '+faststart',
-      '-y', 'output' + segExt,
-    ]);
-    if (code !== 0) throw new Error(`結合に失敗 (exit ${code})`);
-    outputName = 'output' + segExt;
-  }
+    let outputName;
+    if (segFiles.length === 1) {
+      outputName = segFiles[0];
+    } else {
+      const listContent = segFiles.map((f) => `file '${f}'`).join('\n');
+      await ff.writeFile('concat.txt', new TextEncoder().encode(listContent));
+      status('セグメントを結合中...');
+      onProgress(keep.length / (keep.length + 1));
+      const code = await ff.exec([
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', 'concat.txt',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        '-y', 'output' + segExt,
+      ]);
+      if (code !== 0) throw new Error(`結合に失敗 (exit ${code})`);
+      outputName = 'output' + segExt;
+    }
 
-  onProgress(1);
-  const data = await ff.readFile(outputName);
-  for (const f of segFiles) { try { await ff.deleteFile(f); } catch (_) {} }
-  if (outputName !== segFiles[0]) {
-    try { await ff.deleteFile(outputName); } catch (_) {}
+    onProgress(1);
+    const data = await ff.readFile(outputName);
+    for (const f of segFiles) { try { await ff.deleteFile(f); } catch (_) {} }
+    if (outputName !== segFiles[0]) {
+      try { await ff.deleteFile(outputName); } catch (_) {}
+      try { await ff.deleteFile('concat.txt'); } catch (_) {}
+    }
+    return data;
+  } catch (err) {
+    // Clean any partial MEMFS files so a fallback transcode (or a later export)
+    // doesn't accumulate stale segments in wasm memory.
+    for (const f of segFiles) { try { await ff.deleteFile(f); } catch (_) {} }
     try { await ff.deleteFile('concat.txt'); } catch (_) {}
+    try { await ff.deleteFile('output' + segExt); } catch (_) {}
+    throw err;
   }
-  return data;
 }
 
 // ---------- Re-encode export ----------
@@ -243,6 +291,11 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
     args.push('-loop', '0');
   } else {
     args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p');
+    if (options.xSafe) {
+      // Cap peak bitrate near X's sweet spot (well under its ~25 Mbps ceiling) so
+      // the output stays small and X's own server-side re-encode adds minimal loss.
+      args.push('-maxrate', '12M', '-bufsize', '24M');
+    }
     if (includeAudio) args.push('-c:a', 'aac', '-b:a', '128k');
     args.push('-movflags', '+faststart');
   }
@@ -275,6 +328,60 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   return { data, ext: outExt };
 }
 
+// ---------- X (Twitter) optimized export ----------
+// X accepts only H.264 (High Profile) video + AAC audio in an MP4/MOV container.
+// Most game-capture defaults (Xbox Game Bar, Switch, Xbox console, NVIDIA/AMD)
+// already are H.264/AAC MP4, so we stream-copy them losslessly. The exceptions —
+// HEVC (Steam recorder), VP9/Opus (PS5 WebM), AV1, or any speed-up range — must
+// be transcoded to H.264/AAC, which we detect from the probed codecs (not the
+// extension). Output is always .mp4; resolution/audio-normalize are intentionally
+// not applied here so the lossless copy path stays available.
+async function exportForX(ff, inputName, ranges, duration, hasAudio, status, onProgress) {
+  status('コーデックを確認中...');
+  const { videoCodec, audioCodec, height } = await probeInput(ff, inputName);
+  throwIfCancelled(); // a cancel during the probe must abort cleanly, not fall through
+
+  // Trust the probe (the ground truth for what's inside the file) over the
+  // caller's hasAudio flag and the file extension.
+  const audioPresent = audioCodec !== null;
+  const videoXok = videoCodec === 'h264' || videoCodec === 'avc' || videoCodec === 'avc1';
+  const audioXok = !audioPresent || audioCodec === 'aac';
+  const hasSpeedup = rangesHaveSpeedup(ranges);
+  // Clamp anything above 1080p (e.g. 4K console clips): 1080p is X's safe target
+  // and a 4K high-bitrate copy is likely rejected/heavily recompressed anyway.
+  const overSized = !!(height && height > 1080);
+  const canCopy = videoXok && audioXok && !hasSpeedup && !overSized;
+
+  if (canCopy) {
+    const keep = computeKeepSegmentsCutsOnly(ranges, duration);
+    if (keep.length === 0) throw new Error('全部削除されています。');
+    try {
+      const data = await exportStreamCopy(ff, inputName, keep, status, onProgress);
+      status('完了！X用MP4（画質ロスなし）');
+      return new Blob([data.buffer], { type: 'video/mp4' });
+    } catch (err) {
+      if (cancelRequested) throw err;
+      // -c copy can still fail (e.g. an uncopyable data/subtitle stream in an MKV);
+      // fall back to a transcode so the user always gets an X-uploadable file.
+      console.warn('[exporter] X stream-copy failed, transcoding:', err);
+      onProgress(0);
+    }
+  }
+
+  const why = !videoXok
+    ? `${videoCodec || '不明な動画コーデック'} → H.264`
+    : (!audioXok ? `${audioCodec || '音声'} → AAC`
+      : (overSized ? `${height}p → 1080p` : '倍速処理'));
+  status(`X用に再エンコード中（${why}）...`);
+  const { data } = await exportReencode(
+    ff, inputName, ranges, duration, audioPresent,
+    { format: 'mp4', height: overSized ? 1080 : 'original', normalizeAudio: false, xSafe: true },
+    status, onProgress
+  );
+  status('完了！X用MP4');
+  return new Blob([data.buffer], { type: 'video/mp4' });
+}
+
 // ---------- Main export ----------
 export async function exportVideo(file, ranges, duration, options = {}) {
   const status = options.onStatus || (() => {});
@@ -301,6 +408,15 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     await ff.writeFile(inputName, await fetchFile(file));
 
     throwIfCancelled();
+
+    // X (Twitter) optimized export: probe the real codecs and produce an
+    // X-uploadable H.264/AAC MP4 — lossless stream-copy when already compatible,
+    // transcode only for HEVC/AV1/VP9/Opus sources or speed-up ranges.
+    if (options.xOptimize) {
+      const blob = await exportForX(ff, inputName, ranges, duration, hasAudio, status, onProgress);
+      return URL.createObjectURL(blob);
+    }
+
     // Decide whether stream-copy is possible.
     // Stream-copy only when the input container is MP4-family AND output is MP4.
     // Otherwise re-encode so the output bytes actually match the requested container.

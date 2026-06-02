@@ -60,6 +60,10 @@
         <button id="helpBtn" class="btn btn-ghost icon-only" title="キーボードショートカット">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
+        <button id="xExportBtn" class="btn btn-x" disabled title="Xにそのまま投稿できるMP4で書き出し（H.264/AAC・再エンコードは必要なときだけ）">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          X用に書き出し
+        </button>
         <button id="exportBtn" class="btn btn-primary" disabled>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           書き出し
@@ -163,6 +167,8 @@
             <input type="file" id="loadJsonInput" accept="application/json" hidden />
           </label>
         </div>
+
+        <div id="xLimitBadge" class="x-limit" hidden></div>
 
         <ul id="rangesList"></ul>
         <div id="progressWrap" hidden>

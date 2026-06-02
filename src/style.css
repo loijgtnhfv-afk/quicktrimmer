@@ -107,7 +107,14 @@ header {
 .btn-ghost:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-elev); }
 .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-ghost.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-x { background: #16181C; color: #fff; border-color: #16181C; box-shadow: var(--shadow-sm); }
+.btn-x:hover:not(:disabled) { background: #000; box-shadow: var(--shadow-md); }
+.btn-x:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn svg { flex-shrink: 0; }
+
+/* X (Twitter) upload-limit badge: output length / est. size vs X's free-tier caps */
+.x-limit { margin: 4px 0 10px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 600; background: rgba(107,142,90,0.12); color: var(--positive); border: 1px solid rgba(107,142,90,0.35); }
+.x-limit.over { background: rgba(193,95,60,0.12); color: var(--accent); border-color: rgba(193,95,60,0.40); }
 
 main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; margin: 0 auto; }
 
