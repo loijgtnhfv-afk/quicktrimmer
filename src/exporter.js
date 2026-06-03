@@ -154,6 +154,7 @@ async function exportStreamCopy(ff, inputName, keep, status, onProgress) {
         '-i', inputName,
         '-c', 'copy',
         '-avoid_negative_ts', 'make_zero',
+        '-movflags', '+faststart', // moov at front: single-segment output is otherwise non-faststart
         '-map', '0',
         '-y', segName,
       ]);
