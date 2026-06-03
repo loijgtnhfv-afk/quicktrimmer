@@ -78,6 +78,7 @@ async function probeInput(ff, inputName) {
   }
   let videoCodec = null;
   let audioCodec = null;
+  let width = null;
   let height = null;
   for (const ln of lines) {
     if (!videoCodec) {
@@ -85,7 +86,7 @@ async function probeInput(ff, inputName) {
       if (v) {
         videoCodec = v[1].toLowerCase();
         const res = /\b(\d{2,5})x(\d{2,5})\b/.exec(ln); // pull WxH off the same line
-        if (res) height = Number(res[2]);
+        if (res) { width = Number(res[1]); height = Number(res[2]); }
       }
     }
     if (!audioCodec) {
@@ -93,7 +94,7 @@ async function probeInput(ff, inputName) {
       if (a) audioCodec = a[1].toLowerCase();
     }
   }
-  return { videoCodec, audioCodec, height };
+  return { videoCodec, audioCodec, width, height };
 }
 
 // ---------- Range planning ----------
@@ -155,7 +156,7 @@ async function exportStreamCopy(ff, inputName, keep, status, onProgress) {
         '-c', 'copy',
         '-avoid_negative_ts', 'make_zero',
         '-movflags', '+faststart', // moov at front: single-segment output is otherwise non-faststart
-        '-map', '0',
+        '-map', '0:v', '-map', '0:a?', // video + all audio; skip subtitle/data/attachment streams MP4 can't hold (e.g. OBS MKV) — avoids a wasted failed copy then transcode
         '-y', segName,
       ]);
       if (code !== 0) throw new Error(`セグメント ${i + 1} の抽出に失敗 (exit ${code})`);
@@ -191,9 +192,9 @@ async function exportStreamCopy(ff, inputName, keep, status, onProgress) {
     }
     return data;
   } catch (err) {
-    // Clean any partial MEMFS files so a fallback transcode (or a later export)
-    // doesn't accumulate stale segments in wasm memory.
-    for (const f of segFiles) { try { await ff.deleteFile(f); } catch (_) {} }
+    // Clean any partial MEMFS files — including the segment that just failed, which
+    // isn't in segFiles yet — so a fallback transcode / later export doesn't leak.
+    for (let i = 0; i < keep.length; i++) { try { await ff.deleteFile(`seg${i}${segExt}`); } catch (_) {} }
     try { await ff.deleteFile('concat.txt'); } catch (_) {}
     try { await ff.deleteFile('output' + segExt); } catch (_) {}
     throw err;
@@ -339,7 +340,7 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
 // not applied here so the lossless copy path stays available.
 async function exportForX(ff, inputName, ranges, duration, hasAudio, status, onProgress) {
   status('コーデックを確認中...');
-  const { videoCodec, audioCodec, height } = await probeInput(ff, inputName);
+  const { videoCodec, audioCodec, width, height } = await probeInput(ff, inputName);
   throwIfCancelled(); // a cancel during the probe must abort cleanly, not fall through
 
   // Trust the probe (the ground truth for what's inside the file) over the
@@ -348,9 +349,10 @@ async function exportForX(ff, inputName, ranges, duration, hasAudio, status, onP
   const videoXok = videoCodec === 'h264' || videoCodec === 'avc' || videoCodec === 'avc1';
   const audioXok = !audioPresent || audioCodec === 'aac';
   const hasSpeedup = rangesHaveSpeedup(ranges);
-  // Clamp anything above 1080p (e.g. 4K console clips): 1080p is X's safe target
-  // and a 4K high-bitrate copy is likely rejected/heavily recompressed anyway.
-  const overSized = !!(height && height > 1080);
+  // Downscale only LANDSCAPE/square clips above 1080p (1440p/4K 16:9) to X's safe
+  // 1080p target. A portrait clip (e.g. 1080x1920) has height>1080 but is X-fine,
+  // so don't shrink it just because the tall side exceeds 1080.
+  const overSized = !!(width && height && width >= height && height > 1080);
   const canCopy = videoXok && audioXok && !hasSpeedup && !overSized;
 
   if (canCopy) {
