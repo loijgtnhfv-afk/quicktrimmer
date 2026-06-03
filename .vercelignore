@@ -3,3 +3,6 @@ test-fixtures/
 
 # Built locally only; Vercel builds from source
 dist/
+
+# README demo asset — kept in the repo for GitHub, not needed on the deployed site
+docs/
