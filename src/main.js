@@ -18,6 +18,7 @@ import {
 } from './timeline.js';
 import { exportVideo, cancelExport } from './exporter.js';
 import { detectSilences } from './silence.js';
+import { transcribe, toSRT, toVTT } from './subtitles.js';
 import { saveProject, loadProject, downloadProjectJson, parseProjectJson } from './storage.js';
 import { getSettings, saveSettings, resetSettings, DEFAULTS } from './settings.js';
 import { inject as injectAnalytics } from '@vercel/analytics';
@@ -59,6 +60,20 @@ const settingsBtn = document.getElementById('settingsBtn');
 const settingsModal = document.getElementById('settingsModal');
 const installBtn = document.getElementById('installBtn');
 
+// Subtitle (Whisper) panel refs
+const subModelSelect = document.getElementById('subModelSelect');
+const subLangSelect = document.getElementById('subLangSelect');
+const genSubBtn = document.getElementById('genSubBtn');
+const subProgressWrap = document.getElementById('subProgressWrap');
+const subProgressFill = document.getElementById('subProgressFill');
+const subProgressLabel = document.getElementById('subProgressLabel');
+const subStatus = document.getElementById('subStatus');
+const subResult = document.getElementById('subResult');
+const subCount = document.getElementById('subCount');
+const subList = document.getElementById('subList');
+const dlSrtBtn = document.getElementById('dlSrtBtn');
+const dlVttBtn = document.getElementById('dlVttBtn');
+
 // Minimap refs
 const minimapRanges = document.getElementById('minimapRanges');
 const minimapPlayhead = document.getElementById('minimapPlayhead');
@@ -84,6 +99,9 @@ let settings = getSettings();
 let exporting = false;
 let deferredInstallPrompt = null;
 let autosaveWarned = false;
+let subSegments = [];
+let generatingSubs = false;
+const subDlFiles = new Map(); // file -> {loaded,total} for aggregate model-DL progress
 
 // Accept any video/* MIME, but fall back to a known video extension: many real
 // files (notably .mkv/.avi on Windows, especially when drag-dropped) report an
@@ -134,6 +152,7 @@ async function loadFile(file) {
   }
   autosaveWarned = false;
   currentFile = file;
+  resetSubtitlePanel();
   video.src = URL.createObjectURL(file);
   playerCard.classList.remove('empty');
   setStatus('波形を解析しています...');
@@ -162,6 +181,7 @@ async function loadFile(file) {
       }
     });
     silenceBtn.disabled = !getHasAudio();
+    genSubBtn.disabled = !getHasAudio();
     captureFrameBtn.disabled = false;
     // The X export is usable even with zero cuts (e.g. just making a HEVC/PS5
     // clip X-uploadable), so enable it as soon as a file loads.
@@ -191,6 +211,7 @@ async function loadFile(file) {
     if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); video.load(); }
     currentFile = null;
     xExportBtn.disabled = true;
+    genSubBtn.disabled = true;
     updateXLimit();
     playerCard.classList.add('empty');
   }
@@ -302,6 +323,119 @@ silenceBtn.addEventListener('click', async () => {
     silenceBtn.disabled = false;
     setTimeout(() => showProgress(false), 800);
   }
+});
+
+// --- AI subtitle generation (Whisper, local) ---
+function setSubProgress(p, label) {
+  subProgressWrap.hidden = false;
+  const pct = Math.max(0, Math.min(100, Math.round(p * 100)));
+  subProgressFill.style.width = pct + '%';
+  subProgressLabel.textContent = pct + '%';
+  if (label !== undefined) subStatus.textContent = label;
+}
+
+function resetSubtitlePanel() {
+  subSegments = [];
+  subResult.hidden = true;
+  subProgressWrap.hidden = true;
+  subStatus.textContent = '';
+  subList.innerHTML = '';
+  subDlFiles.clear();
+}
+
+function renderSubtitles(segs) {
+  subCount.textContent = `${segs.length}件`;
+  subList.innerHTML = '';
+  segs.forEach((s) => {
+    const li = document.createElement('li');
+    const t = document.createElement('span');
+    t.className = 'sub-time';
+    t.textContent = formatTime(s.start);
+    t.title = 'クリックで動画をこの位置へ';
+    t.onclick = () => { video.currentTime = s.start; };
+    const txt = document.createElement('span');
+    txt.className = 'sub-text';
+    txt.textContent = s.text;
+    li.appendChild(t);
+    li.appendChild(txt);
+    subList.appendChild(li);
+  });
+}
+
+genSubBtn.addEventListener('click', async () => {
+  if (generatingSubs) return;
+  const buf = getAudioBuffer();
+  if (!buf) {
+    subStatus.textContent = '音声トラックがないので字幕を生成できません。';
+    return;
+  }
+  generatingSubs = true;
+  genSubBtn.disabled = true;
+  subResult.hidden = true;
+  subDlFiles.clear();
+  setSubProgress(0, 'モデルを準備中…（初回はモデルのダウンロードに時間がかかります）');
+  try {
+    const lang = subLangSelect.value === 'auto' ? null : subLangSelect.value;
+    const segs = await transcribe(buf, {
+      model: subModelSelect.value,
+      language: lang,
+      onModel: (p) => {
+        if (p.status === 'progress' && p.file && typeof p.total === 'number') {
+          subDlFiles.set(p.file, { loaded: p.loaded || 0, total: p.total || 0 });
+          let loaded = 0, total = 0;
+          for (const f of subDlFiles.values()) { loaded += f.loaded; total += f.total; }
+          if (total > 0) {
+            setSubProgress(loaded / total,
+              `モデルをダウンロード中… ${(loaded / 1048576).toFixed(0)} / ${(total / 1048576).toFixed(0)} MB（初回のみ・以後はキャッシュ）`);
+          }
+        } else if (p.status === 'ready') {
+          // transformers.js ASR gives no inference progress, so switch to an
+          // indeterminate state instead of a stuck percentage.
+          subProgressWrap.hidden = true;
+          subStatus.textContent = '文字起こし中…（動画の長さに応じて時間がかかります）';
+        }
+      },
+    });
+    subSegments = segs;
+    subProgressWrap.hidden = true;
+    if (segs.length === 0) {
+      subStatus.textContent = '字幕を検出できませんでした（無音、またはBGM/効果音のみの可能性）。';
+    } else {
+      renderSubtitles(segs);
+      subResult.hidden = false;
+      subStatus.textContent = `${segs.length}個の字幕セグメントを生成しました。SRT / VTT で書き出せます。`;
+    }
+  } catch (err) {
+    console.error('[subtitles] error:', err);
+    subProgressWrap.hidden = true;
+    subStatus.textContent = '字幕生成に失敗: ' + (err && err.message ? err.message : String(err));
+  } finally {
+    generatingSubs = false;
+    genSubBtn.disabled = !getHasAudio();
+  }
+});
+
+function downloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+dlSrtBtn.addEventListener('click', () => {
+  if (!subSegments.length) return;
+  const base = (currentFile && currentFile.name ? currentFile.name : 'video').replace(/\.[^.]+$/, '');
+  downloadText(`${base}.srt`, toSRT(subSegments), 'application/x-subrip;charset=utf-8');
+});
+dlVttBtn.addEventListener('click', () => {
+  if (!subSegments.length) return;
+  const base = (currentFile && currentFile.name ? currentFile.name : 'video').replace(/\.[^.]+$/, '');
+  downloadText(`${base}.vtt`, toVTT(subSegments), 'text/vtt;charset=utf-8');
 });
 
 // --- Frame capture ---

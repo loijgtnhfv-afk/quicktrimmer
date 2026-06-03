@@ -10,3 +10,6 @@ dist/
 
 # smoke-test 用に生成したテスト動画（巨大バイナリ・コミットしない）
 test-fixtures/
+
+# 字幕機能の COEP スモークテスト用ページ（dev でのみ Vite が配信／デプロイ対象外）
+subtitle-test.html

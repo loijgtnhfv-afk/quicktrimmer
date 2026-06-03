@@ -178,6 +178,47 @@
 
         <div id="xLimitBadge" class="x-limit" hidden></div>
 
+        <details id="subtitlePanel" class="subtitle-panel">
+          <summary>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="6" y1="14" x2="11" y2="14"/><line x1="14" y1="14" x2="18" y2="14"/></svg>
+            AI字幕を生成 <span class="beta-tag">β</span>
+            <span class="sub-hint">Whisperをブラウザ内で実行・アップロードなし</span>
+          </summary>
+          <div class="subtitle-body">
+            <div class="subtitle-controls">
+              <label class="opt">モデル
+                <select id="subModelSelect">
+                  <option value="tiny">tiny（最速・低精度）</option>
+                  <option value="base" selected>base（推奨）</option>
+                  <option value="small">small（高精度・重い）</option>
+                </select>
+              </label>
+              <label class="opt">言語
+                <select id="subLangSelect">
+                  <option value="japanese" selected>日本語</option>
+                  <option value="english">English</option>
+                  <option value="auto">自動判定</option>
+                </select>
+              </label>
+              <button id="genSubBtn" class="btn btn-primary" disabled title="音声から字幕を自動生成（初回はモデルをダウンロードします）">字幕を生成</button>
+            </div>
+            <div id="subProgressWrap" hidden>
+              <div id="subProgressBar"><div id="subProgressFill"></div></div>
+              <div id="subProgressLabel">0%</div>
+            </div>
+            <div id="subStatus" class="sub-status"></div>
+            <div id="subResult" hidden>
+              <div class="sub-result-head">
+                <span id="subCount"></span>
+                <span class="sub-spacer"></span>
+                <button id="dlSrtBtn" class="btn btn-ghost">SRT ダウンロード</button>
+                <button id="dlVttBtn" class="btn btn-ghost">VTT ダウンロード</button>
+              </div>
+              <ul id="subList" class="sub-list"></ul>
+            </div>
+          </div>
+        </details>
+
         <ul id="rangesList"></ul>
         <div id="progressWrap" hidden>
           <div id="progressBar"><div id="progressFill"></div></div>

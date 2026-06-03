@@ -436,6 +436,54 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 /* PWA install button */
 #installBtn[hidden] { display: none; }
 
+/* AI subtitle panel (v0.2) */
+.subtitle-panel {
+  margin: 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+.subtitle-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  list-style: none;
+  user-select: none;
+}
+.subtitle-panel > summary::-webkit-details-marker { display: none; }
+.subtitle-panel > summary svg { color: var(--accent); flex-shrink: 0; }
+.subtitle-panel .beta-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  background: var(--accent-soft); color: var(--accent);
+  padding: 1px 6px; border-radius: 999px;
+}
+.subtitle-panel .sub-hint { font-size: 11.5px; font-weight: 400; color: var(--text-muted); margin-left: auto; }
+.subtitle-body { padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+.subtitle-controls { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.subtitle-controls .btn-primary { padding: 8px 16px; }
+#subProgressWrap { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
+#subProgressWrap[hidden] { display: none; }
+#subProgressBar { flex: 1; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+#subProgressFill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent) 0%, #E07A52 100%); border-radius: 999px; transition: width 0.2s ease; }
+#subProgressLabel { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 36px; text-align: right; font-weight: 600; }
+.sub-status { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; min-height: 0; }
+.sub-status:empty { margin-top: 0; }
+#subResult[hidden] { display: none; }
+.sub-result-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; flex-wrap: wrap; }
+.sub-result-head .sub-spacer { flex: 1; }
+#subCount { font-size: 13px; font-weight: 600; color: var(--text-strong); }
+.sub-list { list-style: none; max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.sub-list li { display: flex; gap: 10px; padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid var(--border); }
+.sub-list li:last-child { border-bottom: none; }
+.sub-list .sub-time { color: var(--accent); font-variant-numeric: tabular-nums; flex-shrink: 0; font-weight: 600; cursor: pointer; }
+.sub-list .sub-text { color: var(--text); }
+
 @media (max-width: 640px) {
   body { padding: 16px 12px 40px; }
   header { flex-direction: column; align-items: flex-start; }
