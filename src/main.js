@@ -49,6 +49,7 @@ const resetZoomBtn = document.getElementById('resetZoomBtn');
 const captureFrameBtn = document.getElementById('captureFrameBtn');
 const formatSelect = document.getElementById('formatSelect');
 const heightSelect = document.getElementById('heightSelect');
+const aspectSelect = document.getElementById('aspectSelect');
 const normalizeAudioChk = document.getElementById('normalizeAudioChk');
 const saveJsonBtn = document.getElementById('saveJsonBtn');
 const loadJsonInput = document.getElementById('loadJsonInput');
@@ -392,6 +393,7 @@ async function doExport({ xOptimize }) {
       xOptimize,
       format: formatSelect.value,
       height: heightSelect.value,
+      aspect: aspectSelect.value,
       normalizeAudio: normalizeAudioChk.checked,
     });
     setProgress(1);

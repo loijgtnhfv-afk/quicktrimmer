@@ -244,9 +244,14 @@ function buildReencodeFilter(segments, hasAudio, opts) {
   );
 
   // Video chain: format-specific post-processing
+  const aspect = opts.aspect;
   if (format === 'gif') {
     const gifH = height && height !== 'original' ? Number(height) : 360;
     parts.push(`[v_pre]fps=12,scale=-2:${gifH}:flags=lanczos[outv]`);
+  } else if (aspect === '1:1' || aspect === '9:16') {
+    // Letterbox (pad) into the target canvas — never crop, so HUD/killfeed stay.
+    const [cw, ch] = aspect === '1:1' ? [1080, 1080] : [1080, 1920];
+    parts.push(`[v_pre]scale=${cw}:${ch}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${cw}:${ch}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[outv]`);
   } else if (height && height !== 'original') {
     parts.push(`[v_pre]scale=-2:${Number(height)}[outv]`);
   } else {
@@ -275,6 +280,7 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   const filterComplex = buildReencodeFilter(segments, includeAudio, {
     normalize: options.normalizeAudio,
     height: options.height,
+    aspect: options.aspect,
     format,
   });
 
@@ -338,7 +344,7 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
 // be transcoded to H.264/AAC, which we detect from the probed codecs (not the
 // extension). Output is always .mp4; resolution/audio-normalize are intentionally
 // not applied here so the lossless copy path stays available.
-async function exportForX(ff, inputName, ranges, duration, hasAudio, status, onProgress) {
+async function exportForX(ff, inputName, ranges, duration, hasAudio, aspect, status, onProgress) {
   status('コーデックを確認中...');
   const { videoCodec, audioCodec, width, height } = await probeInput(ff, inputName);
   throwIfCancelled(); // a cancel during the probe must abort cleanly, not fall through
@@ -349,11 +355,12 @@ async function exportForX(ff, inputName, ranges, duration, hasAudio, status, onP
   const videoXok = videoCodec === 'h264' || videoCodec === 'avc' || videoCodec === 'avc1';
   const audioXok = !audioPresent || audioCodec === 'aac';
   const hasSpeedup = rangesHaveSpeedup(ranges);
+  const aspectChange = aspect && aspect !== 'original'; // padding to 1:1 / 9:16 needs a re-encode
   // Downscale only LANDSCAPE/square clips above 1080p (1440p/4K 16:9) to X's safe
   // 1080p target. A portrait clip (e.g. 1080x1920) has height>1080 but is X-fine,
   // so don't shrink it just because the tall side exceeds 1080.
   const overSized = !!(width && height && width >= height && height > 1080);
-  const canCopy = videoXok && audioXok && !hasSpeedup && !overSized;
+  const canCopy = videoXok && audioXok && !hasSpeedup && !overSized && !aspectChange;
 
   if (canCopy) {
     const keep = computeKeepSegmentsCutsOnly(ranges, duration);
@@ -374,11 +381,12 @@ async function exportForX(ff, inputName, ranges, duration, hasAudio, status, onP
   const why = !videoXok
     ? `${videoCodec || '不明な動画コーデック'} → H.264`
     : (!audioXok ? `${audioCodec || '音声'} → AAC`
-      : (overSized ? `${height}p → 1080p` : '倍速処理'));
+      : (aspectChange ? `${aspect === '9:16' ? '縦9:16' : '正方形1:1'} に変換`
+        : (overSized ? `${height}p → 1080p` : '倍速処理')));
   status(`X用に再エンコード中（${why}）...`);
   const { data } = await exportReencode(
     ff, inputName, ranges, duration, audioPresent,
-    { format: 'mp4', height: overSized ? 1080 : 'original', normalizeAudio: false, xSafe: true },
+    { format: 'mp4', height: overSized ? 1080 : 'original', aspect, normalizeAudio: false, xSafe: true },
     status, onProgress
   );
   status('完了！X用MP4');
@@ -394,6 +402,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
   const format = options.format || 'mp4';
   const height = options.height || 'original';
   const normalizeAudio = !!options.normalizeAudio;
+  const aspect = options.aspect || 'original';
 
   cancelRequested = false;
   logBuffer = [];
@@ -416,7 +425,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     // X-uploadable H.264/AAC MP4 — lossless stream-copy when already compatible,
     // transcode only for HEVC/AV1/VP9/Opus sources or speed-up ranges.
     if (options.xOptimize) {
-      const blob = await exportForX(ff, inputName, ranges, duration, hasAudio, status, onProgress);
+      const blob = await exportForX(ff, inputName, ranges, duration, hasAudio, aspect, status, onProgress);
       return URL.createObjectURL(blob);
     }
 
@@ -429,6 +438,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
       hasSpeedup ||
       format !== 'mp4' ||
       height !== 'original' ||
+      aspect !== 'original' ||
       normalizeAudio ||
       requestedMode === 'precise' ||
       !inputIsMp4Family;
@@ -454,7 +464,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     throwIfCancelled();
     const { data, ext: outExt } = await exportReencode(
       ff, inputName, ranges, duration, hasAudio,
-      { format, height, normalizeAudio }, status, onProgress
+      { format, height, normalizeAudio, aspect }, status, onProgress
     );
     const mime = outExt === '.webm' ? 'video/webm' : (outExt === '.gif' ? 'image/gif' : 'video/mp4');
     status('完了！');

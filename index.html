@@ -157,6 +157,14 @@
               <option value="360">360p</option>
             </select>
           </label>
+          <label class="opt" title="X用に正方形/縦へ。はみ出さず余白（黒帯）で収める（HUDを切らない）">
+            アスペクト
+            <select id="aspectSelect">
+              <option value="original" selected>元のまま</option>
+              <option value="1:1">正方形 1:1</option>
+              <option value="9:16">縦 9:16</option>
+            </select>
+          </label>
           <label class="opt-check" title="音量を統一する (-16 LUFS)">
             <input type="checkbox" id="normalizeAudioChk" />
             音量を揃える
