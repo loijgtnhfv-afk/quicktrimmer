@@ -98,7 +98,8 @@ tools/og-snapshot.html # OGP 画像作成用テンプレ（正本。スクショ
 7. **無音検出は async + 協調的チャンク** — Web Worker は AudioBuffer transferable 問題で不採用
 8. **マルチクリップ・Whisper.wasm フィラー検出は v0.2 繰越** — 工数大、現スコープ外
 9. **広告投下はオーガニックデータ蓄積後** — まず X / Reddit / HN / PH の無料チャネル
-10. **ライセンスは未決**(ffmpeg が GPL なので慎重に)
+10. **ライセンス = GPL-3.0-or-later**(同梱 ffmpeg-core が GPL ビルドのため)
+11. **ターゲット = ゲームクリップ→X 投稿層**(汎用トリマーでなく一点集中。X用書き出し=実コーデックで判定し stream-copy 優先、HEVC/PS5 等のみ transcode、縦動画は無劣化維持)
 
 ---
 
@@ -120,17 +121,16 @@ tools/og-snapshot.html # OGP 画像作成用テンプレ（正本。スクショ
 
 ---
 
-## 🎯 アクティブな次の一手(2026-05-28 時点)
+## 🎯 アクティブな次の一手(2026-06-03 時点)
 
-### 即やる
-- [ ] `og-preview.html` を Chrome DevTools の "Capture node screenshot" で PNG 化
-- [ ] `public/og-image.png` 配置 → `index.html` の `og:image` を `.svg` → `.png` に
-- [ ] `vercel --prod` で再デプロイ → Twitter / Slack でプレビュー確認
+> ターゲットを「**ゲームのクリップを X に上げたい層**」に確定。**X用書き出し(F1〜F4)実装・本番稼働**。告知素材(日英カード・デモ・OG・文面)も完成。詳細は Vault `セッション/2026-06-03.md`。
 
-### 1 週間以内
-- [ ] 30 秒デモ動画(**QuickTrimmer 自身で作る**のがメタで最強)
-- [ ] Vercel Analytics 有効化
-- [ ] X / Reddit / Zenn / HN Show / Product Hunt で告知
+### 残り(ほぼ告知だけ)
+- [ ] **告知投稿**(X / Reddit / Zenn / Show HN / PH。文面＝Vault `告知文ドラフト.md` ピボット版・日英、素材＝`Downloads/quicktrimmer-cards/`(JP/EN カード + demo.mp4/gif))
+- [ ] 本人クリップで本番スモーク(自分の神プレイを実際に X に上げて体験)
+
+### 完了済み(このターゲットの実装)
+- X用書き出しボタン(コーデック自動判定→必要時のみ H.264 化 / 縦動画は無劣化 / 4K→1080p / 対 X 上限バッジ / faststart)。Codex 2 回レビュー反映、ヘッドレス＋実クリップ検証済み
 
 ### v0.2 ヘッドライン:AI 字幕生成(Whisper.wasm)
 詳細プランは Vault の `v0.2-字幕生成プラン.md`
@@ -177,4 +177,4 @@ Codex プラグインは Claude Code に導入済(`openai/codex-plugin-cc`)。�
 
 ---
 
-**最終更新**: 2026-05-28(本番デプロイ完了時点)
+**最終更新**: 2026-06-03(ターゲット確定＋X用書き出し本番稼働)
