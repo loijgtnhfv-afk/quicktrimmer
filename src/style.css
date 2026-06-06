@@ -40,7 +40,7 @@ body {
   font-family: -apple-system, "Segoe UI", "Inter", "Yu Gothic UI", "Hiragino Kaku Gothic ProN", sans-serif;
   background: var(--bg);
   color: var(--text);
-  padding: 28px 24px 60px;
+  padding: 18px 24px 24px;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   transition: background 0.15s ease;
@@ -70,7 +70,7 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 0 auto 24px;
+  margin: 0 auto 14px;
   max-width: 1100px;
   flex-wrap: wrap;
   gap: 16px;
@@ -113,10 +113,10 @@ header {
 .btn svg { flex-shrink: 0; }
 
 /* X (Twitter) upload-limit badge: output length / est. size vs X's free-tier caps */
-.x-limit { margin: 4px 0 10px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 600; background: rgba(107,142,90,0.12); color: var(--positive); border: 1px solid rgba(107,142,90,0.35); }
+.x-limit { margin: 2px 0 8px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 600; background: rgba(107,142,90,0.12); color: var(--positive); border: 1px solid rgba(107,142,90,0.35); }
 .x-limit.over { background: rgba(193,95,60,0.12); color: var(--accent); border-color: rgba(193,95,60,0.40); }
 
-main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; margin: 0 auto; }
+main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; margin: 0 auto; }
 
 .card {
   background: var(--surface);
@@ -131,7 +131,7 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 
 /* Custom control bar below the video — always visible once a clip is loaded.
    Lives outside the video, so it can never overlap the native <video controls>. */
-.player-controls { display: none; flex-direction: column; gap: 8px; padding: 10px 12px 12px; background: #16181C; border-top: 1px solid #2A2A2A; }
+.player-controls { display: none; flex-direction: column; gap: 7px; padding: 8px 12px 10px; background: #16181C; border-top: 1px solid #2A2A2A; }
 .player-card:not(.empty) .player-controls { display: flex; }
 
 /* Cut-range minimap — a real strip under the video (was a fragile bottom:42px overlay). */
@@ -210,7 +210,7 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 .pc-play .pc-kbd { color: #fff; background: rgba(0, 0, 0, 0.22); border-color: rgba(255, 255, 255, 0.3); }
 .pc-mark-out .pc-kbd { color: #F0C3B2; border-color: rgba(240, 195, 178, 0.3); }
 
-#player { width: 100%; max-height: 58vh; display: block; background: #0E0E0E; }
+#player { width: 100%; max-height: 40vh; display: block; background: #0E0E0E; }
 .player-card.empty #player { display: none; }
 #emptyState { display: none; text-align: center; color: #999; padding: 60px 24px; }
 .player-card.empty #emptyState { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -219,13 +219,13 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 #emptyState p { font-size: 13px; color: #777; line-height: 1.7; }
 
 /* Timeline */
-.timeline-card { padding: 14px 16px 16px; }
+.timeline-card { padding: 11px 16px 12px; }
 
 .toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
 }
 .toolbar-group { display: flex; gap: 6px; align-items: center; }
@@ -282,11 +282,11 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
   font-weight: 600;
 }
 
-#timelineWrapper { display: flex; flex-direction: column; gap: 6px; }
+#timelineWrapper { display: flex; flex-direction: column; gap: 5px; }
 
 #timelineContainer {
   position: relative;
-  height: 110px;
+  height: 74px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -364,7 +364,7 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 #timeLabels { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 2px; }
 
 /* Info */
-.info-card { padding: 14px 16px; }
+.info-card { padding: 10px 16px; }
 
 .export-options {
   display: flex;
@@ -520,7 +520,7 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 
 /* AI subtitle panel (v0.2) */
 .subtitle-panel {
-  margin: 4px 0 10px;
+  margin: 4px 0 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-elev);
