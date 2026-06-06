@@ -329,10 +329,10 @@ function skip(delta) {
 function markIn() {
   markInTime = video.currentTime;
   showMarkInAt(markInTime);
-  setStatus(`開始マーク: ${formatTime(markInTime)} (O キー / 「終了→カット」で範囲を確定)`);
+  setStatus(`カット開始: ${formatTime(markInTime)} — 終わりまで進めて「カット終了」(O) を押してください`);
 }
 function markOut() {
-  if (markInTime === null) { setStatus('先に「I 開始」で開始位置をマークしてください'); return; }
+  if (markInTime === null) { setStatus('先に「カット開始」(I) で始まりの位置を決めてください'); return; }
   const start = Math.min(markInTime, video.currentTime);
   const end = Math.max(markInTime, video.currentTime);
   if (end - start < 0.05) { setStatus('範囲が短すぎます'); markInTime = null; hideMarkIn(); return; }
