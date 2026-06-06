@@ -40,6 +40,17 @@ let dragMode = null;
 let dragStartX = 0;
 let draftEl = null;
 let resizeIndex = -1;
+
+// Which kind of range a left-drag creates. 'cut' (default) or 'speedup' (with a speed).
+// Set from the UI mode toggle via setDragTool(); right-drag (subtract) ignores this.
+let dragTool = { type: 'cut', speed: 0 };
+export function setDragTool(type, speed) {
+  if (type === 'speedup') {
+    dragTool = { type: 'speedup', speed: [2, 4, 8].includes(speed) ? speed : 2 };
+  } else {
+    dragTool = { type: 'cut', speed: 0 };
+  }
+}
 let resizeEdge = null;
 const MIN_RANGE_SECONDS = 0.05;
 
@@ -470,7 +481,7 @@ function onDown(e) {
   dragStartX = clamp(e.clientX - rect.left, 0, rect.width);
   dragMode = 'create';
   draftEl = document.createElement('div');
-  draftEl.className = 'range-selection drafting';
+  draftEl.className = 'range-selection drafting' + (dragTool.type === 'speedup' ? ' speedup' : '');
   draftEl.style.left = dragStartX + 'px';
   draftEl.style.width = '0px';
   selectionsLayer.appendChild(draftEl);
@@ -620,7 +631,10 @@ function addRange(start, end) {
   start = Math.max(0, Math.min(duration, start));
   end = Math.max(0, Math.min(duration, end));
   if (end - start < MIN_RANGE_SECONDS) return;
-  ranges = placeRangeInto(ranges, { start, end, type: 'cut' });
+  const r = dragTool.type === 'speedup'
+    ? { start, end, type: 'speedup', speed: dragTool.speed || 2 }
+    : { start, end, type: 'cut' };
+  ranges = placeRangeInto(ranges, r);
   renderRanges();
   pushHistory();
   notify();

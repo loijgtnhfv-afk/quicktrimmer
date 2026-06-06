@@ -73,18 +73,36 @@
 
     <main>
       <section class="card player-card empty" id="playerCard">
-        <video id="player" controls></video>
-        <div id="videoMinimap">
-          <div id="minimapRanges"></div>
-          <div id="minimapPlayhead"></div>
+        <div class="player-stage">
+          <video id="player" controls></video>
+          <div id="emptyState">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="6" width="14" height="12" rx="2"/>
+              <polygon points="22 8 16 12 22 16 22 8"/>
+            </svg>
+            <h2>動画をここにドロップ</h2>
+            <p>または「動画を選択」ボタンから読み込み<br>※ ファイルはこのPCの中だけで処理されます（アップロードなし）</p>
+          </div>
         </div>
-        <div id="emptyState">
-          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="2" y="6" width="14" height="12" rx="2"/>
-            <polygon points="22 8 16 12 22 16 22 8"/>
-          </svg>
-          <h2>動画をここにドロップ</h2>
-          <p>または「動画を選択」ボタンから読み込み<br>※ ファイルはこのPCの中だけで処理されます（アップロードなし）</p>
+        <div class="player-controls" id="playerControls">
+          <div id="videoMinimap" title="クリックでシーク">
+            <div id="minimapRanges"></div>
+            <div id="minimapPlayhead"></div>
+          </div>
+          <div class="pc-bar">
+            <div class="pc-group">
+              <button class="pc-btn" id="pcBack5" type="button" title="5秒戻る (Shift+←)">⏮ 5秒</button>
+              <button class="pc-btn" id="pcBack1" type="button" title="1秒戻る (←)">◀ 1秒</button>
+              <button class="pc-btn pc-play" id="pcPlay" type="button" title="再生 / 一時停止 (Space)">▶ 再生</button>
+              <button class="pc-btn" id="pcFwd1" type="button" title="1秒進む (→)">1秒 ▶</button>
+              <button class="pc-btn" id="pcFwd5" type="button" title="5秒進む (Shift+→)">5秒 ⏭</button>
+            </div>
+            <div class="pc-time"><span id="pcCur">0:00</span> / <span id="pcDur">0:00</span></div>
+            <div class="pc-group pc-mark">
+              <button class="pc-btn" id="pcMarkIn" type="button" title="現在位置を開始にマーク (I)">I 開始</button>
+              <button class="pc-btn pc-mark-out" id="pcMarkOut" type="button" title="現在位置で終了 → カット範囲を追加 (O)">O 終了→カット</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -97,6 +115,15 @@
             <button id="redoBtn" class="btn btn-ghost icon-only" title="やり直し (Ctrl+Shift+Z)" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             </button>
+          </div>
+          <div class="toolbar-group seg-group" title="左ドラッグで作る範囲の種類">
+            <button id="modeCutBtn" class="seg-btn active" type="button" title="ドラッグでカット範囲を作成">✂ カット</button>
+            <button id="modeSpeedBtn" class="seg-btn" type="button" title="ドラッグで倍速範囲を作成">⏩ 倍速</button>
+            <select id="dragSpeedSelect" class="seg-speed" title="倍速の速さ" hidden>
+              <option value="2" selected>2倍</option>
+              <option value="4">4倍</option>
+              <option value="8">8倍</option>
+            </select>
           </div>
           <div class="toolbar-group">
             <button id="previewBtn" class="btn btn-ghost" title="カット後をプレビュー再生 (P)">
@@ -117,8 +144,8 @@
           </div>
           <div class="toolbar-group toolbar-right">
             <div class="legend">
-              <span class="legend-item"><span class="dot dot-add"></span>左ドラッグ</span>
-              <span class="legend-item"><span class="dot dot-sub"></span>右ドラッグ</span>
+              <span class="legend-item" id="legendDrag"><span class="dot dot-add"></span>左ドラッグ=カット</span>
+              <span class="legend-item"><span class="dot dot-sub"></span>右ドラッグ=削除</span>
               <span class="legend-item"><span class="kbd">Wheel</span> ズーム</span>
             </div>
           </div>

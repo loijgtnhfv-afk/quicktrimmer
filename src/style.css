@@ -126,29 +126,30 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
   overflow: hidden;
 }
 
-.player-card { position: relative; background: #0E0E0E; border-color: #2A2A2A; min-height: 280px; display: flex; align-items: center; justify-content: center; }
+.player-card { background: #0E0E0E; border-color: #2A2A2A; display: flex; flex-direction: column; }
+.player-stage { position: relative; flex: 1; min-height: 280px; display: flex; align-items: center; justify-content: center; background: #0E0E0E; overflow: hidden; }
 
-/* Video minimap overlay */
+/* Custom control bar below the video — always visible once a clip is loaded.
+   Lives outside the video, so it can never overlap the native <video controls>. */
+.player-controls { display: none; flex-direction: column; gap: 8px; padding: 10px 12px 12px; background: #16181C; border-top: 1px solid #2A2A2A; }
+.player-card:not(.empty) .player-controls { display: flex; }
+
+/* Cut-range minimap — a real strip under the video (was a fragile bottom:42px overlay). */
 #videoMinimap {
-  position: absolute;
-  bottom: 42px;
-  left: 12px;
-  right: 12px;
-  height: 5px;
+  position: relative;
+  height: 6px;
   background: rgba(255, 255, 255, 0.14);
   border-radius: 3px;
-  pointer-events: none;
-  z-index: 5;
-  display: none;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
-.player-card:not(.empty) #videoMinimap { display: block; }
 .minimap-range {
   position: absolute;
   top: 0;
   bottom: 0;
   background: rgba(193, 95, 60, 0.92);
   border-radius: 2px;
+  pointer-events: none;
 }
 .minimap-range.speedup {
   background: var(--speedup-strong);
@@ -160,8 +161,40 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
   width: 2px;
   background: #fff;
   border-radius: 1px;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
 }
+
+/* Quick-action buttons (play / skip / mark) */
+.pc-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pc-group { display: flex; align-items: center; gap: 6px; }
+.pc-mark { margin-left: auto; }
+.pc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px 11px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #E8E6E0;
+  background: #24262B;
+  border: 1px solid #3A3D44;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+}
+.pc-btn:hover { background: #2F3238; border-color: #4A4E57; }
+.pc-btn:active { transform: translateY(1px); }
+.pc-btn.pc-play { min-width: 96px; background: var(--accent); border-color: var(--accent); color: #fff; }
+.pc-btn.pc-play:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.pc-btn.pc-mark-out { background: rgba(193, 95, 60, 0.16); border-color: rgba(193, 95, 60, 0.5); color: #F0C3B2; }
+.pc-btn.pc-mark-out:hover { background: rgba(193, 95, 60, 0.28); border-color: rgba(193, 95, 60, 0.7); }
+.pc-time { font-size: 13px; color: #B8B6AE; font-variant-numeric: tabular-nums; font-weight: 600; }
+
 #player { width: 100%; max-height: 58vh; display: block; background: #0E0E0E; }
 .player-card.empty #player { display: none; }
 #emptyState { display: none; text-align: center; color: #999; padding: 60px 24px; }
@@ -188,6 +221,39 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 .dot-add { background: var(--accent); }
 .dot-sub { background: var(--positive); }
+.dot-speed { background: var(--speedup); }
+
+/* Drag-mode segmented toggle (left-drag creates cut vs speedup) */
+.seg-group { gap: 0; }
+.seg-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.seg-btn:first-of-type { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+#modeSpeedBtn { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.seg-btn + .seg-btn { border-left: none; }
+.seg-btn:hover:not(.active) { background: var(--bg-elev); color: var(--text); }
+#modeCutBtn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#modeSpeedBtn.active { background: var(--speedup); border-color: var(--speedup); color: #fff; }
+.seg-speed {
+  margin-left: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
 
 .kbd {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
@@ -238,6 +304,7 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 }
 .range-selection.drafting { background: rgba(193, 95, 60, 0.18); border-style: dashed; }
 .range-selection.drafting.subtract { background: var(--positive-soft); border-color: var(--positive); border-style: dashed; }
+.range-selection.drafting.speedup { background: var(--speedup-soft); border-color: var(--speedup); border-style: dashed; }
 
 .speedup-label {
   position: absolute;
@@ -491,4 +558,6 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
   .btn { flex: 1; justify-content: center; min-width: 0; }
   .toolbar { gap: 8px; }
   .toolbar-right { margin-left: 0; width: 100%; }
+  .pc-mark { margin-left: 0; width: 100%; }
+  .pc-btn { font-size: 12px; padding: 7px 9px; }
 }

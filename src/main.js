@@ -15,6 +15,7 @@ import {
   showMarkInAt,
   hideMarkIn,
   resetZoom,
+  setDragTool,
 } from './timeline.js';
 import { exportVideo, cancelExport } from './exporter.js';
 import { detectSilences } from './silence.js';
@@ -48,6 +49,10 @@ const previewBtn = document.getElementById('previewBtn');
 const silenceBtn = document.getElementById('silenceBtn');
 const resetZoomBtn = document.getElementById('resetZoomBtn');
 const captureFrameBtn = document.getElementById('captureFrameBtn');
+const modeCutBtn = document.getElementById('modeCutBtn');
+const modeSpeedBtn = document.getElementById('modeSpeedBtn');
+const dragSpeedSelect = document.getElementById('dragSpeedSelect');
+const legendDrag = document.getElementById('legendDrag');
 const formatSelect = document.getElementById('formatSelect');
 const heightSelect = document.getElementById('heightSelect');
 const aspectSelect = document.getElementById('aspectSelect');
@@ -77,6 +82,18 @@ const dlVttBtn = document.getElementById('dlVttBtn');
 // Minimap refs
 const minimapRanges = document.getElementById('minimapRanges');
 const minimapPlayhead = document.getElementById('minimapPlayhead');
+
+// On-screen player control bar refs
+const videoMinimap = document.getElementById('videoMinimap');
+const pcPlay = document.getElementById('pcPlay');
+const pcBack5 = document.getElementById('pcBack5');
+const pcBack1 = document.getElementById('pcBack1');
+const pcFwd1 = document.getElementById('pcFwd1');
+const pcFwd5 = document.getElementById('pcFwd5');
+const pcMarkIn = document.getElementById('pcMarkIn');
+const pcMarkOut = document.getElementById('pcMarkOut');
+const pcCur = document.getElementById('pcCur');
+const pcDur = document.getElementById('pcDur');
 
 // Settings UI
 const silenceThreshold = document.getElementById('silenceThreshold');
@@ -288,10 +305,89 @@ function skipIfInCut() {
 video.addEventListener('timeupdate', () => {
   if (previewMode) skipIfInCut();
   updateMinimapPlayhead();
+  updateTimeDisplay();
+});
+
+// --- Player transport (shared by keyboard shortcuts + the on-screen control bar) ---
+function playPause() {
+  if (video.paused) video.play().catch(() => {}); else video.pause();
+}
+function skip(delta) {
+  const dur = isFinite(video.duration) ? video.duration : Infinity;
+  video.currentTime = Math.max(0, Math.min(dur, video.currentTime + delta));
+}
+function markIn() {
+  markInTime = video.currentTime;
+  showMarkInAt(markInTime);
+  setStatus(`開始マーク: ${formatTime(markInTime)} (O キー / 「終了→カット」で範囲を確定)`);
+}
+function markOut() {
+  if (markInTime === null) { setStatus('先に「I 開始」で開始位置をマークしてください'); return; }
+  const start = Math.min(markInTime, video.currentTime);
+  const end = Math.max(markInTime, video.currentTime);
+  if (end - start < 0.05) { setStatus('範囲が短すぎます'); markInTime = null; hideMarkIn(); return; }
+  addRanges([{ start, end, type: 'cut' }]);
+  setStatus(`カット範囲を追加: ${formatTime(start)} 〜 ${formatTime(end)}`);
+  markInTime = null;
+  hideMarkIn();
+}
+function fmtClock(t) {
+  if (!isFinite(t) || t < 0) t = 0;
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+function updateTimeDisplay() {
+  if (!pcCur || !pcDur) return;
+  pcCur.textContent = fmtClock(video.currentTime);
+  pcDur.textContent = fmtClock(video.duration);
+}
+function updatePlayBtn() {
+  if (!pcPlay) return;
+  pcPlay.textContent = (!video.paused && !video.ended) ? '⏸ 一時停止' : '▶ 再生';
+}
+video.addEventListener('play', updatePlayBtn);
+video.addEventListener('pause', updatePlayBtn);
+video.addEventListener('ended', updatePlayBtn);
+video.addEventListener('loadedmetadata', updateTimeDisplay);
+
+// On-screen control bar wiring
+pcPlay.addEventListener('click', playPause);
+pcBack5.addEventListener('click', () => skip(-5));
+pcBack1.addEventListener('click', () => skip(-1));
+pcFwd1.addEventListener('click', () => skip(1));
+pcFwd5.addEventListener('click', () => skip(5));
+pcMarkIn.addEventListener('click', markIn);
+pcMarkOut.addEventListener('click', markOut);
+videoMinimap.addEventListener('click', (e) => {
+  const dur = video.duration;
+  if (!isFinite(dur) || dur <= 0) return;
+  const rect = videoMinimap.getBoundingClientRect();
+  const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  video.currentTime = frac * dur;
 });
 
 // --- Reset zoom ---
 resetZoomBtn.addEventListener('click', () => resetZoom());
+
+// --- Drag mode: left-drag creates a cut range or a speedup range ---
+let speedDragMode = false;
+function applyDragTool() {
+  const speed = parseInt(dragSpeedSelect.value, 10) || 2;
+  if (speedDragMode) setDragTool('speedup', speed);
+  else setDragTool('cut');
+  modeCutBtn.classList.toggle('active', !speedDragMode);
+  modeSpeedBtn.classList.toggle('active', speedDragMode);
+  dragSpeedSelect.hidden = !speedDragMode;
+  if (legendDrag) {
+    legendDrag.innerHTML = speedDragMode
+      ? '<span class="dot dot-speed"></span>左ドラッグ=倍速'
+      : '<span class="dot dot-add"></span>左ドラッグ=カット';
+  }
+}
+modeCutBtn.addEventListener('click', () => { speedDragMode = false; applyDragTool(); });
+modeSpeedBtn.addEventListener('click', () => { speedDragMode = true; applyDragTool(); });
+dragSpeedSelect.addEventListener('change', () => { if (speedDragMode) applyDragTool(); });
 
 // --- Silence detect (uses settings) ---
 silenceBtn.addEventListener('click', async () => {
@@ -702,15 +798,13 @@ document.addEventListener('keydown', (e) => {
 
   if (e.code === 'Space') {
     e.preventDefault();
-    if (video.paused) video.play(); else video.pause();
+    playPause();
   } else if (e.key === 'ArrowLeft') {
     e.preventDefault();
-    const step = e.shiftKey ? 5 : (ctrl ? 0.1 : 1);
-    video.currentTime = Math.max(0, video.currentTime - step);
+    skip(e.shiftKey ? -5 : (ctrl ? -0.1 : -1));
   } else if (e.key === 'ArrowRight') {
     e.preventDefault();
-    const step = e.shiftKey ? 5 : (ctrl ? 0.1 : 1);
-    video.currentTime = Math.min(video.duration, video.currentTime + step);
+    skip(e.shiftKey ? 5 : (ctrl ? 0.1 : 1));
   } else if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
     e.preventDefault();
     undo(); updateUndoRedo();
@@ -719,19 +813,10 @@ document.addEventListener('keydown', (e) => {
     redo(); updateUndoRedo();
   } else if (e.key.toLowerCase() === 'i' && !ctrl) {
     e.preventDefault();
-    markInTime = video.currentTime;
-    showMarkInAt(markInTime);
-    setStatus(`開始マーク: ${formatTime(markInTime)} (Oキーで範囲を確定)`);
+    markIn();
   } else if (e.key.toLowerCase() === 'o' && !ctrl) {
     e.preventDefault();
-    if (markInTime === null) { setStatus('先に I キーで開始位置をマークしてください'); return; }
-    const start = Math.min(markInTime, video.currentTime);
-    const end = Math.max(markInTime, video.currentTime);
-    if (end - start < 0.05) { setStatus('範囲が短すぎます'); markInTime = null; hideMarkIn(); return; }
-    addRanges([{ start, end, type: 'cut' }]);
-    setStatus(`カット範囲を追加: ${formatTime(start)} 〜 ${formatTime(end)}`);
-    markInTime = null;
-    hideMarkIn();
+    markOut();
   } else if (e.key === 'Escape') {
     if (markInTime !== null) {
       markInTime = null; hideMarkIn();
