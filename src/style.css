@@ -195,6 +195,21 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
 .pc-btn.pc-mark-out:hover { background: rgba(193, 95, 60, 0.28); border-color: rgba(193, 95, 60, 0.7); }
 .pc-time { font-size: 13px; color: #B8B6AE; font-variant-numeric: tabular-nums; font-weight: 600; }
 
+/* Inline keycap hint on each control button so the shortcut is visible at a glance. */
+.pc-kbd {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #B8B6AE;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.pc-play .pc-kbd { color: #fff; background: rgba(0, 0, 0, 0.22); border-color: rgba(255, 255, 255, 0.3); }
+.pc-mark-out .pc-kbd { color: #F0C3B2; border-color: rgba(240, 195, 178, 0.3); }
+
 #player { width: 100%; max-height: 58vh; display: block; background: #0E0E0E; }
 .player-card.empty #player { display: none; }
 #emptyState { display: none; text-align: center; color: #999; padding: 60px 24px; }
@@ -560,4 +575,5 @@ main { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; marg
   .toolbar-right { margin-left: 0; width: 100%; }
   .pc-mark { margin-left: 0; width: 100%; }
   .pc-btn { font-size: 12px; padding: 7px 9px; }
+  .pc-kbd { display: none; } /* touch / narrow screens have no keyboard — drop the hints to save width */
 }

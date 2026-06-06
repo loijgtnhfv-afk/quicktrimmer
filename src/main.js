@@ -344,7 +344,8 @@ function updateTimeDisplay() {
 }
 function updatePlayBtn() {
   if (!pcPlay) return;
-  pcPlay.textContent = (!video.paused && !video.ended) ? '⏸ 一時停止' : '▶ 再生';
+  const label = pcPlay.querySelector('.pc-label') || pcPlay;
+  label.textContent = (!video.paused && !video.ended) ? '⏸ 一時停止' : '▶ 再生';
 }
 video.addEventListener('play', updatePlayBtn);
 video.addEventListener('pause', updatePlayBtn);
