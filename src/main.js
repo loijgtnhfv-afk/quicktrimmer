@@ -16,6 +16,13 @@ import {
   hideMarkIn,
   resetZoom,
   setDragTool,
+  keyOf,
+  getSelectedKey,
+  selectRangeAt,
+  focusRange,
+  setHotIndexExternal,
+  onHot,
+  onSelect,
 } from './timeline.js';
 import { exportVideo, cancelExport } from './exporter.js';
 import { detectSilences } from './silence.js';
@@ -184,6 +191,9 @@ async function loadFile(file) {
       cutRanges = ranges;
       exportBtn.disabled = ranges.length === 0;
       renderRangesList(ranges);
+      // Any edit drops the transient hover (the hovered row may have just been
+      // deleted/renumbered); the pin (.selected) is identity-keyed and persists.
+      setHotIndexExternal(-1);
       updateUndoRedo();
       updateMinimap();
       updateXLimit();
@@ -389,6 +399,26 @@ function applyDragTool() {
 modeCutBtn.addEventListener('click', () => { speedDragMode = false; applyDragTool(); });
 modeSpeedBtn.addEventListener('click', () => { speedDragMode = true; applyDragTool(); });
 dragSpeedSelect.addEventListener('change', () => { if (speedDragMode) applyDragTool(); });
+
+// --- Timeline ↔ list correspondence: light/scroll the list row when the
+//     matching waveform bar is hovered (onHot) or pinned (onSelect). Registered
+//     ONCE; the data-index selectors naturally skip the extra "すべて取り消し" li. ---
+function rowByIndex(i) {
+  return i >= 0 ? rangesList.querySelector(`li[data-index="${i}"]`) : null;
+}
+onHot((i) => {
+  rangesList.querySelectorAll('li.hot').forEach((e) => e.classList.remove('hot'));
+  const li = rowByIndex(i);
+  // Highlight only — never scroll on passive hover. #rangesList is not its own
+  // scroll container, so scrollIntoView here would yank the whole PAGE as the
+  // cursor sweeps the waveform. Scrolling is reserved for the deliberate pin.
+  if (li) li.classList.add('hot');
+});
+onSelect((key, index) => {
+  rangesList.querySelectorAll('li.selected').forEach((e) => e.classList.remove('selected'));
+  const li = rowByIndex(index);
+  if (li) { li.classList.add('selected'); li.scrollIntoView({ block: 'nearest' }); }
+});
 
 // --- Silence detect (uses settings) ---
 silenceBtn.addEventListener('click', async () => {
@@ -679,10 +709,19 @@ function renderRangesList(ranges) {
   if (ranges.length === 0) return;
   ranges.forEach((r, i) => {
     const li = document.createElement('li');
+    li.dataset.index = i;
+    li.dataset.key = keyOf(r);
+    if (getSelectedKey() === keyOf(r)) li.classList.add('selected');
     const info = document.createElement('div');
     info.className = 'range-info';
     const isSpeed = r.type === 'speedup';
     const action = isSpeed ? `${r.speed}x 倍速` : '削除';
+
+    // Number badge — same digit as the matching waveform bar (#i+1).
+    const num = document.createElement('span');
+    num.className = 'range-row-num' + (isSpeed ? ' speedup' : '');
+    num.textContent = i + 1;
+    info.appendChild(num);
 
     const time = document.createElement('span');
     time.textContent = `${formatTime(r.start)} 〜 ${formatTime(r.end)}  ${action} `;
@@ -691,6 +730,19 @@ function renderRangesList(ranges) {
     pill.textContent = `${(r.end - r.start).toFixed(1)}秒`;
     info.appendChild(time);
     info.appendChild(pill);
+
+    // Click the row → seek there, pin it, and reveal its bar on the waveform
+    // (recentering the zoom viewport if the bar is currently off-screen).
+    info.style.cursor = 'pointer';
+    info.title = 'クリックでこの位置へ移動 / 波形上の対応バーを表示';
+    info.addEventListener('click', () => {
+      video.currentTime = r.start;
+      selectRangeAt(i);
+      focusRange(keyOf(r));
+    });
+    // Hover the row → light its bar (and vice-versa via onHot below).
+    li.addEventListener('mouseenter', () => setHotIndexExternal(i));
+    li.addEventListener('mouseleave', () => setHotIndexExternal(-1));
 
     const actions = document.createElement('div');
     actions.className = 'range-actions';

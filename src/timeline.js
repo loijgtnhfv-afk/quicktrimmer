@@ -52,7 +52,85 @@ export function setDragTool(type, speed) {
   }
 }
 let resizeEdge = null;
+let resizePinned = false; // was the range being resized the pinned one? (captured on mousedown)
 const MIN_RANGE_SECONDS = 0.05;
+
+// ---------- Range ↔ list correspondence (pin + hover) ----------
+// The list (main.js) and the timeline render the SAME sorted `ranges` array in
+// the same order, so array index i pairs a bar with its list row and its number
+// badge. But indices SHIFT on every edit, so the sustained "pinned" selection is
+// keyed by a stable identity string (keyOf), re-resolved to a fresh index on
+// every render — never stored as a raw index. Hover is purely transient.
+export function keyOf(r) {
+  return `${r.start.toFixed(4)}|${r.end.toFixed(4)}|${r.type}|${r.speed || 0}`;
+}
+function findIndexByKey(k) {
+  if (k == null) return -1;
+  return ranges.findIndex((r) => keyOf(r) === k);
+}
+let selectedKey = null;   // identity of the pinned range, or null
+let hotIndex = -1;        // transient hover index, or -1
+let onHotCb = null;       // (index) => void   — bar hovered, light the row
+let onSelectCb = null;    // (key, index) => void — range pinned, light the row
+
+export function getSelectedKey() { return selectedKey; }
+export function onHot(cb) { onHotCb = cb; }
+export function onSelect(cb) { onSelectCb = cb; }
+
+// Pin the range at array index i (or clear the pin with i < 0). Repaints the
+// bars and notifies the list — does NOT persist or rebuild ranges.
+function applySelect(i) {
+  selectedKey = (i >= 0 && ranges[i]) ? keyOf(ranges[i]) : null;
+  renderRanges();
+  if (onSelectCb) onSelectCb(selectedKey, selectedKey === null ? -1 : i);
+}
+export function selectRangeAt(i) { applySelect(i); }
+export function clearSelection() { applySelect(-1); }
+
+// After an edit re-placed a pinned range (resize / type change), the fragment may
+// have merged into a neighbour that now ENCLOSES it. Re-pin that live range (or
+// clear the pin if it vanished). Ranges never overlap, so at most one matches.
+function repinContaining(frag) {
+  const live = ranges.find((rr) => rr.type === frag.type && (rr.speed || 0) === (frag.speed || 0)
+    && rr.start <= frag.start + 1e-9 && rr.end >= frag.end - 1e-9);
+  selectedKey = live ? keyOf(live) : null;
+}
+
+function setHotIndex(i) {
+  if (i === hotIndex) return;
+  hotIndex = i;
+  selectionsLayer.querySelectorAll('.range-selection.hot').forEach((e) => e.classList.remove('hot'));
+  if (i >= 0) selectionsLayer.querySelector(`.range-selection[data-index="${i}"]`)?.classList.add('hot');
+  if (onHotCb) onHotCb(i);
+}
+export function setHotIndexExternal(i) { setHotIndex(i); }
+
+// Recenter the viewport on a range if it's scrolled off-screen (zoomed in),
+// then flash its bar so a list-row click actually reveals it on the waveform.
+export function focusRange(key) {
+  const i = findIndexByKey(key);
+  if (i < 0) return;
+  const r = ranges[i];
+  if (r.start < viewport.start || r.end > viewport.end) {
+    const span = vpSpan();
+    const mid = (r.start + r.end) / 2;
+    let s = mid - span / 2;
+    let e = s + span;
+    if (s < 0) { e -= s; s = 0; }
+    if (e > duration) { s -= (e - duration); e = duration; }
+    if (s < 0) s = 0;
+    viewport = { start: s, end: e };
+    drawWaveform();
+    renderRanges();
+    updatePlayhead();
+    updateTimeLabels();
+  }
+  const el = selectionsLayer.querySelector(`.range-selection[data-index="${i}"]`);
+  if (el) {
+    el.classList.add('flash');
+    el.addEventListener('animationend', () => el.classList.remove('flash'), { once: true });
+  }
+}
 
 // History
 const HISTORY_LIMIT = 80;
@@ -181,11 +259,14 @@ export function setRanges(newRanges) {
 // Update the type/speed of one range by index. Re-normalize for overlaps.
 export function updateRangeType(index, type, speed) {
   if (!ranges[index]) return;
+  const wasPinned = selectedKey !== null && keyOf(ranges[index]) === selectedKey;
   const updated = { ...ranges[index], type };
   if (type === 'speedup') updated.speed = speed || 2;
   else delete updated.speed;
   ranges.splice(index, 1);
   ranges = placeRangeInto(ranges, updated);
+  // Retyping doesn't move the range, so keep it pinned (its key changed type/speed).
+  if (wasPinned) repinContaining(updated);
   renderRanges();
   pushHistory();
   notify();
@@ -198,6 +279,8 @@ export async function initTimeline(file, video, onChange) {
   ranges = [];
   history = [[]];
   historyIndex = 0;
+  selectedKey = null;   // a new clip starts with nothing pinned/hovered
+  hotIndex = -1;
   // Emit an "initial" event so the caller can sync UI without persisting the
   // empty state (otherwise the autosave for this filename would be clobbered
   // before the restore prompt has a chance to read it).
@@ -420,6 +503,15 @@ function setupInteractions() {
   window.addEventListener('mouseup', onUp);
   container.addEventListener('contextmenu', (e) => e.preventDefault());
   container.addEventListener('wheel', onWheel, { passive: false });
+  // Transient hover preview: light the bar under the cursor and its list row.
+  // Read-only — never seeks, never notifies, and stands down during any drag.
+  container.addEventListener('mousemove', (e) => {
+    if (dragMode) return;
+    const rect = container.getBoundingClientRect();
+    const x = clamp(e.clientX - rect.left, 0, rect.width);
+    setHotIndex(findRangeIndexAt(x, rect));
+  });
+  container.addEventListener('mouseleave', () => setHotIndex(-1));
 }
 
 function findRangeIndexAt(x, rect) {
@@ -472,6 +564,9 @@ function onDown(e) {
     e.stopPropagation();
     resizeIndex = parseInt(e.target.dataset.index, 10);
     resizeEdge = e.target.dataset.edge;
+    // Capture pin intent NOW — onMove mutates the range's key, so a check at
+    // mouseup would always miss (the key no longer equals the pre-drag selectedKey).
+    resizePinned = selectedKey !== null && ranges[resizeIndex] && keyOf(ranges[resizeIndex]) === selectedKey;
     dragMode = 'resize';
     seekVideoToX(e.clientX);
     return;
@@ -547,6 +642,9 @@ function onMove(e) {
     } else {
       r.end = clamp(t, r.start + MIN_RANGE_SECONDS, duration);
     }
+    // Keep the pin attached to the bar as it resizes — otherwise renderRanges
+    // below re-resolves the now-stale selectedKey to -1 and clears the pin mid-drag.
+    if (resizePinned) selectedKey = keyOf(r);
     // Live visual feedback only — do NOT notify() here. notify() persists to
     // localStorage and rebuilds the ranges list + minimap, which on every
     // mousemove (~60-120Hz) janks the drag and hammers storage. onUp commits
@@ -571,9 +669,13 @@ function onUp() {
       const moved = { ...ranges[idx] };
       ranges.splice(idx, 1);
       ranges = placeRangeInto(ranges, moved);
+      // Carry the pin over to the resized range (resizePinned was captured on
+      // mousedown; the live key was kept in sync during onMove).
+      if (resizePinned) repinContaining(moved);
     } else {
       ranges = mergeRanges(ranges);
     }
+    resizePinned = false;
     renderRanges();
     pushHistory();
     notify();
@@ -588,7 +690,9 @@ function onUp() {
     draftEl = null;
     dragMode = null;
 
-    if (width < 4) return;
+    // A left-click without a drag (no width) is not a range creation — treat it
+    // as "pin the range I clicked" (or clear the pin if I clicked empty space).
+    if (width < 4) { applySelect(findRangeIndexAt(left, rect)); return; }
     const startTime = xToTime(left, rect);
     const endTime = xToTime(left + width, rect);
     addRange(startTime, endTime);
@@ -668,9 +772,17 @@ function renderRanges() {
 
     const el = document.createElement('div');
     el.className = 'range-selection ' + (r.type === 'speedup' ? 'speedup' : 'cut');
+    el.dataset.index = i;
+    el.dataset.key = keyOf(r);
     el.style.left = Math.max(0, left) + 'px';
     el.style.width = (Math.min(rect.width, right) - Math.max(0, left)) + 'px';
     el.title = r.type === 'speedup' ? `${r.speed}x 倍速（右クリックで削除）` : '右クリックで削除';
+
+    // Number badge — same digit as the list row, so the eye pairs them at a glance.
+    const num = document.createElement('span');
+    num.className = 'range-num';
+    num.textContent = i + 1;
+    el.appendChild(num);
 
     if (r.type === 'speedup') {
       const label = document.createElement('span');
@@ -693,6 +805,18 @@ function renderRanges() {
 
     selectionsLayer.appendChild(el);
   });
+
+  // Re-apply transient/sustained correspondence state from the single sources of
+  // truth (re-resolved against the just-rebuilt bars). A pinned range that no
+  // longer exists (deleted/merged) clears itself here.
+  if (selectedKey !== null) {
+    const si = findIndexByKey(selectedKey);
+    if (si < 0) selectedKey = null;
+    else selectionsLayer.querySelector(`.range-selection[data-index="${si}"]`)?.classList.add('selected');
+  }
+  if (hotIndex >= 0) {
+    selectionsLayer.querySelector(`.range-selection[data-index="${hotIndex}"]`)?.classList.add('hot');
+  }
 }
 
 function updatePlayhead() {
