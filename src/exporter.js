@@ -604,12 +604,14 @@ export async function exportConcat(clips, options = {}) {
   if (plans.length < 2) throw new Error('結合するには2本以上の有効なクリップが必要です。');
 
   const tsFiles = [];
+  const tempFiles = []; // every MEMFS path we create, so cleanup uses real names
   try {
     const N = plans.length;
     for (let i = 0; i < N; i++) {
       throwIfCancelled();
       const { clip, segments } = plans[i];
       const inputName = `cin${i}${getExt(clip.file.name)}`;
+      tempFiles.push(inputName);
       status(`クリップ ${i + 1}/${N} を準備中...`);
       await ff.writeFile(inputName, await fetchFile(clip.file));
       throwIfCancelled();
@@ -622,6 +624,7 @@ export async function exportConcat(clips, options = {}) {
       const clipHasAudio = probe.audioCodec !== null;
 
       const tsName = `cseg${i}.ts`;
+      tempFiles.push(tsName);
       await encodeClipToTs(
         ff, inputName, segments, clipHasAudio, canvas, tsName,
         (msg) => status(`クリップ ${i + 1}/${N}: ${msg}`),
@@ -637,6 +640,7 @@ export async function exportConcat(clips, options = {}) {
     status('クリップを結合中...');
     onProgress(N / (N + 1));
     const list = tsFiles.map((f) => `file '${f}'`).join('\n');
+    tempFiles.push('clist.txt', 'combined.mp4');
     await ff.writeFile('clist.txt', new TextEncoder().encode(list));
     const code = await ff.exec([
       '-f', 'concat', '-safe', '0', '-i', 'clist.txt',
@@ -647,20 +651,15 @@ export async function exportConcat(clips, options = {}) {
 
     const data = await ff.readFile('combined.mp4');
     onProgress(1);
-    for (const f of tsFiles) { try { await ff.deleteFile(f); } catch (_) {} }
-    try { await ff.deleteFile('clist.txt'); } catch (_) {}
-    try { await ff.deleteFile('combined.mp4'); } catch (_) {}
+    for (const f of tempFiles) { try { await ff.deleteFile(f); } catch (_) {} }
     status('完了！つなげたハイライトをXにアップロードできます。');
     return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
   } catch (err) {
-    // Best-effort MEMFS cleanup (skip if the worker was already terminated by cancel).
+    // Best-effort MEMFS cleanup by REAL tracked names (plans was filtered+reindexed,
+    // so recomputing names from the original clips[] would miss/mis-target files).
+    // Skip if the worker was already terminated by cancel.
     if (!cancelRequested) {
-      for (let i = 0; i < clips.length; i++) {
-        try { await ff.deleteFile(`cseg${i}.ts`); } catch (_) {}
-        try { await ff.deleteFile(`cin${i}${getExt(clips[i].file.name)}`); } catch (_) {}
-      }
-      try { await ff.deleteFile('clist.txt'); } catch (_) {}
-      try { await ff.deleteFile('combined.mp4'); } catch (_) {}
+      for (const f of tempFiles) { try { await ff.deleteFile(f); } catch (_) {} }
     }
     const msg = (err && err.message) ? err.message : String(err);
     if (cancelRequested || msg.includes('__CANCELLED__') || msg.includes('called FFmpeg.terminate()')) {

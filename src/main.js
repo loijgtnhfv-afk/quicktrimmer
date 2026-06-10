@@ -237,10 +237,21 @@ async function handleIncomingFiles(fileList) {
   if (incoming.length > 1) setStatus(`${incoming.length}本のクリップを追加しました。`);
 }
 
+// Serialize clip loads. initTimeline() is async and drives module-global timeline
+// state + the single <video>; two overlapping loads (a fast switch while a prior
+// clip's audio is still decoding) would corrupt the active clip's waveform/ranges.
+// Chain every open so only one runs at a time.
+let openChain = Promise.resolve();
+function openClip(clipId, opts = {}) {
+  const run = openChain.then(() => doOpenClip(clipId, opts));
+  openChain = run.catch(() => {}); // a failed load must not poison the queue
+  return run;
+}
+
 // Load a clip into the timeline/player. Persists the previously-active clip's
 // ranges first, swaps the video source, re-inits the timeline, and restores this
 // clip's own ranges. timeline.js stays single-clip; we swap its state in/out.
-async function openClip(clipId, { promptRestore = false } = {}) {
+async function doOpenClip(clipId, { promptRestore = false } = {}) {
   const clip = clips.find((c) => c.id === clipId);
   if (!clip) return;
 
@@ -798,6 +809,7 @@ async function doExport({ xOptimize }) {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000); // free the exported blob
     setStatus(xOptimize
       ? '完了。Xにそのままアップロードできます（ダウンロードフォルダを確認）。'
       : '完了。ダウンロードフォルダを確認してください。');
@@ -1075,6 +1087,13 @@ async function doCombinedExport() {
     setStatus('クリップ情報を確認中...');
     await Promise.all(needMeta.map(probeClipMeta));
   }
+  // If any clip's length still can't be read, it would plan to zero segments and be
+  // silently dropped from the combine — fail loudly with the offending names instead.
+  const unmeasurable = clips.filter((c) => !(c.duration > 0));
+  if (unmeasurable.length) {
+    setStatus('次のクリップの長さを取得できませんでした（壊れている可能性）: ' + unmeasurable.map((c) => c.name).join('、'));
+    return;
+  }
 
   exporting = true;
   exportBtn.disabled = true;
@@ -1096,6 +1115,7 @@ async function doCombinedExport() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000); // free the combined blob
     setStatus('完了。つなげたハイライトをXにアップロードできます（ダウンロードフォルダを確認）。');
     setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
   } catch (err) {
