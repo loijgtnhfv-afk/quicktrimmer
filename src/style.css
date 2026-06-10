@@ -116,6 +116,30 @@ header {
 .x-limit { margin: 2px 0 8px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 600; background: rgba(107,142,90,0.12); color: var(--positive); border: 1px solid rgba(107,142,90,0.35); }
 .x-limit.over { background: rgba(193,95,60,0.12); color: var(--accent); border-color: rgba(193,95,60,0.40); }
 
+/* Clip tray (multi-clip "highlights" combine) */
+.clip-tray-card { padding: 12px 14px; }
+.clip-tray-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.clip-tray-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--text-strong); }
+.clip-tray-title svg { color: var(--accent); }
+.clip-tray-sub { font-weight: 500; font-size: 12.5px; color: var(--text-muted); }
+.clip-tray-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.clip-tray-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.clip-chip { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elev); cursor: pointer; transition: border-color .12s, background .12s; }
+.clip-chip:hover { border-color: var(--border-strong); }
+.clip-chip.active { border-color: var(--accent); background: var(--accent-soft); }
+.clip-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--accent); color: #fff; }
+.clip-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.clip-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-sub { font-size: 11.5px; color: var(--text-muted); }
+.clip-chip.active .clip-sub { color: var(--accent); font-weight: 600; }
+.clip-ops { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.clip-op { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+.clip-op:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.clip-op:disabled { opacity: 0.3; cursor: not-allowed; }
+.clip-del:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.combine-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.combine-hint { font-size: 11.5px; color: var(--text-muted); }
+
 main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; margin: 0 auto; }
 
 .card {

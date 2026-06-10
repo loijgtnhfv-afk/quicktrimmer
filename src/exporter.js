@@ -485,6 +485,193 @@ export async function exportVideo(file, ranges, duration, options = {}) {
   }
 }
 
+// ---------- Multi-clip concat ("highlights") export ----------
+// Combine several clips — each already middle-cut / sped-up with its own ranges —
+// into ONE X-uploadable MP4. Cross-clip stream-copy is impossible (clips differ in
+// codec/resolution/fps/SAR/audio), so we re-encode: each clip is normalized to a
+// COMMON canvas + 30fps CFR + H.264 High/4.1 + AAC 48k stereo, written to an
+// MPEG-TS intermediate (TS carries in-band SPS/PPS so independently-encoded
+// segments concat-copy cleanly — far more robust than concatenating .mp4s), then
+// the .ts files are concat-demuxed with `-c copy` (+aac_adtstoasc to mux ADTS→MP4)
+// and faststart. Clips are processed ONE AT A TIME (write→encode→delete input) to
+// bound ffmpeg.wasm MEMFS memory; game clips can be hundreds of MB each.
+
+function canvasFor(aspect) {
+  if (aspect === '1:1') return [1080, 1080];
+  if (aspect === '9:16') return [1080, 1920];
+  return [1920, 1080]; // 'original' / default → landscape 1080p
+}
+
+// Build the per-clip filter_complex that trims+speeds the clip's segments, concats
+// them, then conforms video to the common canvas (letterbox/pillarbox — never crop)
+// at 30fps, and audio to 48k stereo. Returns { filter, hasAudioOut }.
+function buildClipNormalizeFilter(segments, hasAudio, canvas) {
+  const [CW, CH] = canvas;
+  const parts = [];
+  segments.forEach((seg, i) => {
+    let v = `[0:v]trim=${seg.start.toFixed(3)}:${seg.end.toFixed(3)},setpts=PTS-STARTPTS`;
+    if (seg.speed && seg.speed !== 1) v += `,setpts=PTS/${seg.speed}`;
+    v += `[v${i}]`;
+    parts.push(v);
+    if (hasAudio) {
+      let a = `[0:a:0]atrim=${seg.start.toFixed(3)}:${seg.end.toFixed(3)},asetpts=PTS-STARTPTS`;
+      if (seg.speed && seg.speed !== 1) {
+        let s = seg.speed;
+        while (s > 2.0) { a += `,atempo=2.0`; s /= 2.0; }
+        if (s > 1.001 || s < 0.999) a += `,atempo=${s.toFixed(4)}`;
+      }
+      a += `[a${i}]`;
+      parts.push(a);
+    }
+  });
+  const n = segments.length;
+  const vpad = `scale=${CW}:${CH}:force_original_aspect_ratio=decrease:force_divisible_by=2,` +
+    `pad=${CW}:${CH}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30`;
+  if (hasAudio) {
+    let concatIn = '';
+    for (let i = 0; i < n; i++) concatIn += `[v${i}][a${i}]`;
+    parts.push(`${concatIn}concat=n=${n}:v=1:a=1[vc][ac]`);
+    parts.push(`[vc]${vpad}[outv]`);
+    parts.push(`[ac]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[outa]`);
+  } else {
+    let concatIn = '';
+    for (let i = 0; i < n; i++) concatIn += `[v${i}]`;
+    parts.push(`${concatIn}concat=n=${n}:v=1:a=0[vc]`);
+    parts.push(`[vc]${vpad}[outv]`);
+  }
+  return { filter: parts.join(';'), hasAudioOut: hasAudio };
+}
+
+// Post-trim/speed output duration of a clip's kept segments (seconds).
+function segmentsOutputDuration(segments) {
+  return segments.reduce((acc, s) => acc + (s.end - s.start) / (s.speed && s.speed !== 1 ? s.speed : 1), 0);
+}
+
+async function encodeClipToTs(ff, inputName, segments, hasAudio, canvas, outName, status, onProgress) {
+  const { filter } = buildClipNormalizeFilter(segments, hasAudio, canvas);
+  const args = ['-i', inputName];
+  // Clips with no usable audio still get a silent stereo track — bounded to the
+  // exact kept-segments length via `-t` — so EVERY intermediate has an identical
+  // stream layout; otherwise concat-copy of mixed has-audio/no-audio segments breaks.
+  if (!hasAudio) {
+    const silenceDur = Math.max(0.05, segmentsOutputDuration(segments));
+    args.push('-f', 'lavfi', '-t', silenceDur.toFixed(3), '-i', 'anullsrc=r=48000:cl=stereo');
+  }
+  args.push('-filter_complex', filter, '-map', '[outv]');
+  if (hasAudio) args.push('-map', '[outa]');
+  else args.push('-map', '1:a');
+  args.push(
+    // Same libx264 ultrafast / yuv420p settings as the single-clip X export, so
+    // every intermediate is bit-for-bit uniform in codec params → concat-copy is
+    // valid. (ultrafast emits Constrained Baseline, which X accepts.)
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+    '-maxrate', '12M', '-bufsize', '24M',
+    '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+    '-f', 'mpegts', '-y', outName
+  );
+
+  const progressHandler = ({ progress }) => {
+    if (typeof progress === 'number' && progress >= 0) onProgress(Math.max(0, Math.min(1, progress)));
+  };
+  ff.on('progress', progressHandler);
+  status('再エンコード中...');
+  let code;
+  try { code = await ff.exec(args); }
+  finally { try { ff.off('progress', progressHandler); } catch (_) {} }
+  if (code !== 0) throw new Error(`クリップのエンコードに失敗 (exit ${code})`);
+}
+
+// clips: [{ file, ranges, duration, hasAudio }]. Output: a combined X-ready .mp4 URL.
+export async function exportConcat(clips, options = {}) {
+  const status = options.onStatus || (() => {});
+  const onProgress = options.onProgress || (() => {});
+  const canvas = canvasFor(options.aspect || 'original');
+
+  cancelRequested = false;
+  logBuffer = [];
+  status('FFmpeg を準備中...');
+  onProgress(0);
+
+  let ff;
+  try { ff = await getFFmpeg(); }
+  catch (err) { throw new Error('FFmpeg の読み込みに失敗: ' + (err.message || err)); }
+
+  // Plan each clip's kept/sped segments; drop clips that are fully cut away.
+  const plans = clips
+    .map((c) => ({ clip: c, segments: planSegments(c.ranges || [], c.duration) }))
+    .filter((p) => p.segments.length > 0);
+  if (plans.length === 0) throw new Error('すべてのクリップが空です（カットで全部消えています）。');
+  if (plans.length < 2) throw new Error('結合するには2本以上の有効なクリップが必要です。');
+
+  const tsFiles = [];
+  try {
+    const N = plans.length;
+    for (let i = 0; i < N; i++) {
+      throwIfCancelled();
+      const { clip, segments } = plans[i];
+      const inputName = `cin${i}${getExt(clip.file.name)}`;
+      status(`クリップ ${i + 1}/${N} を準備中...`);
+      await ff.writeFile(inputName, await fetchFile(clip.file));
+      throwIfCancelled();
+
+      // Ground-truth audio presence per clip (don't trust an upstream flag): a clip
+      // the user never opened in the editor would otherwise default to has-audio and
+      // make the [0:a:0] filter fail on a genuinely silent source.
+      const probe = await probeInput(ff, inputName);
+      throwIfCancelled();
+      const clipHasAudio = probe.audioCodec !== null;
+
+      const tsName = `cseg${i}.ts`;
+      await encodeClipToTs(
+        ff, inputName, segments, clipHasAudio, canvas, tsName,
+        (msg) => status(`クリップ ${i + 1}/${N}: ${msg}`),
+        (p) => onProgress((i + p) / (N + 1))
+      );
+      tsFiles.push(tsName);
+      // Free the source immediately so peak MEMFS stays ~one clip + the (small,
+      // H.264-compressed) intermediates.
+      try { await ff.deleteFile(inputName); } catch (_) {}
+    }
+
+    throwIfCancelled();
+    status('クリップを結合中...');
+    onProgress(N / (N + 1));
+    const list = tsFiles.map((f) => `file '${f}'`).join('\n');
+    await ff.writeFile('clist.txt', new TextEncoder().encode(list));
+    const code = await ff.exec([
+      '-f', 'concat', '-safe', '0', '-i', 'clist.txt',
+      '-c', 'copy', '-bsf:a', 'aac_adtstoasc',
+      '-movflags', '+faststart', '-y', 'combined.mp4',
+    ]);
+    if (code !== 0) throw new Error(`結合に失敗 (exit ${code})`);
+
+    const data = await ff.readFile('combined.mp4');
+    onProgress(1);
+    for (const f of tsFiles) { try { await ff.deleteFile(f); } catch (_) {} }
+    try { await ff.deleteFile('clist.txt'); } catch (_) {}
+    try { await ff.deleteFile('combined.mp4'); } catch (_) {}
+    status('完了！つなげたハイライトをXにアップロードできます。');
+    return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+  } catch (err) {
+    // Best-effort MEMFS cleanup (skip if the worker was already terminated by cancel).
+    if (!cancelRequested) {
+      for (let i = 0; i < clips.length; i++) {
+        try { await ff.deleteFile(`cseg${i}.ts`); } catch (_) {}
+        try { await ff.deleteFile(`cin${i}${getExt(clips[i].file.name)}`); } catch (_) {}
+      }
+      try { await ff.deleteFile('clist.txt'); } catch (_) {}
+      try { await ff.deleteFile('combined.mp4'); } catch (_) {}
+    }
+    const msg = (err && err.message) ? err.message : String(err);
+    if (cancelRequested || msg.includes('__CANCELLED__') || msg.includes('called FFmpeg.terminate()')) {
+      cancelRequested = false;
+      throw new Error('__CANCELLED__');
+    }
+    const tail = tailLog(20);
+    throw new Error(`${msg}\n\n--- FFmpeg log (最後の20行) ---\n${tail || '(ログなし)'}`);
+  }
+}
+
 // Expose helper for UI to predict output extension
 export function predictOutputExt(format) {
   return format === 'webm' ? '.webm' : (format === 'gif' ? '.gif' : '.mp4');

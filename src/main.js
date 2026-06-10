@@ -24,7 +24,7 @@ import {
   onHot,
   onSelect,
 } from './timeline.js';
-import { exportVideo, cancelExport } from './exporter.js';
+import { exportVideo, exportConcat, cancelExport } from './exporter.js';
 import { detectSilences } from './silence.js';
 import { transcribe, toSRT, toVTT } from './subtitles.js';
 import { saveProject, loadProject, downloadProjectJson, parseProjectJson } from './storage.js';
@@ -72,6 +72,15 @@ const settingsBtn = document.getElementById('settingsBtn');
 const settingsModal = document.getElementById('settingsModal');
 const installBtn = document.getElementById('installBtn');
 
+// Multi-clip ("highlights") refs
+const clipTrayCard = document.getElementById('clipTrayCard');
+const clipTrayList = document.getElementById('clipTrayList');
+const addClipBtn = document.getElementById('addClipBtn');
+const clearClipsBtn = document.getElementById('clearClipsBtn');
+const combineBtn = document.getElementById('combineBtn');
+const combineHint = document.getElementById('combineHint');
+const combineBadge = document.getElementById('combineBadge');
+
 // Subtitle (Whisper) panel refs
 const subModelSelect = document.getElementById('subModelSelect');
 const subLangSelect = document.getElementById('subLangSelect');
@@ -115,8 +124,14 @@ const defaultNormalize = document.getElementById('defaultNormalize');
 const resetSettingsBtn = document.getElementById('resetSettingsBtn');
 
 // --- App state ---
-let currentFile = null;
-let cutRanges = [];
+// clips[] holds every loaded clip; the ACTIVE clip is the one mirrored into
+// currentFile / cutRanges and shown in the timeline. Single-clip use = a clips
+// array of length 1, so the existing single-clip pipeline is untouched.
+let clips = [];          // [{ id, file, name, duration, ranges, hasAudio, url }]
+let activeClipId = null;
+let clipSeq = 0;
+let currentFile = null;  // mirror of the active clip's file
+let cutRanges = [];      // mirror of the active clip's ranges
 let previewMode = false;
 let markInTime = null;
 let settings = getSettings();
@@ -167,65 +182,129 @@ function showProgress(show) {
 }
 function showCancelBtn(show) { cancelExportBtn.hidden = !show; }
 
-// --- Load file ---
-async function loadFile(file) {
-  const looksLikeVideo = file && (file.type.startsWith('video/') || VIDEO_EXT_RE.test(file.name));
-  if (!looksLikeVideo) {
-    setStatus('動画ファイルを選んでください。');
-    return;
+// --- Clip helpers ---
+function isVideoFile(file) {
+  return !!file && (file.type.startsWith('video/') || VIDEO_EXT_RE.test(file.name));
+}
+function activeClip() {
+  return clips.find((c) => c.id === activeClipId) || null;
+}
+
+// Cheap metadata-only probe (no decode) so a clip's duration is known for the
+// combined-length badge even if the user never opens it in the editor.
+function probeClipMeta(clip) {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.muted = true;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try { v.removeAttribute('src'); v.load(); } catch (_) {}
+      resolve();
+    };
+    v.addEventListener('loadedmetadata', () => { if (isFinite(v.duration)) clip.duration = v.duration; finish(); }, { once: true });
+    v.addEventListener('error', finish, { once: true });
+    setTimeout(finish, 8000);
+    v.src = clip.url;
+  });
+}
+
+// Entry point for the file picker + drag-drop. Registers one or more clips and
+// opens the first newly-added one for editing. Existing clips are kept (append),
+// so dropping more files builds up a highlights set rather than replacing.
+async function handleIncomingFiles(fileList) {
+  const incoming = Array.from(fileList || []).filter(isVideoFile);
+  if (incoming.length === 0) { setStatus('動画ファイルを選んでください。'); return; }
+  const wasEmpty = clips.length === 0;
+  const newClips = [];
+  for (const file of incoming) {
+    const clip = {
+      id: ++clipSeq, file, name: file.name,
+      duration: 0, ranges: [], hasAudio: true, url: URL.createObjectURL(file),
+    };
+    clips.push(clip);
+    newClips.push(clip);
   }
+  renderClipTray();
+  // Fill in durations in the background so the tray + combined badge are accurate
+  // even for clips never opened in the editor (openClip sets the active one too).
+  Promise.all(newClips.map(probeClipMeta)).then(() => { renderClipTray(); updateCombinedUI(); });
+  // Restore-prompt only for the very first single clip (preserves the original
+  // single-clip behavior); batch/appended clips just load empty.
+  await openClip(newClips[0].id, { promptRestore: wasEmpty && incoming.length === 1 });
+  if (incoming.length > 1) setStatus(`${incoming.length}本のクリップを追加しました。`);
+}
+
+// Load a clip into the timeline/player. Persists the previously-active clip's
+// ranges first, swaps the video source, re-inits the timeline, and restores this
+// clip's own ranges. timeline.js stays single-clip; we swap its state in/out.
+async function openClip(clipId, { promptRestore = false } = {}) {
+  const clip = clips.find((c) => c.id === clipId);
+  if (!clip) return;
+
+  // Persist the outgoing clip's current edits before we switch away.
+  const prev = activeClip();
+  if (prev && prev.id !== clip.id) prev.ranges = getRanges();
+
+  // Capture this clip's ranges BEFORE init (initTimeline's initial notify resets
+  // the active clip's ranges to [] via the callback below — read them first).
+  const savedRanges = (clip.ranges || []).slice();
+
+  activeClipId = clip.id;
+  currentFile = clip.file;
   autosaveWarned = false;
-  currentFile = file;
   resetSubtitlePanel();
-  video.src = URL.createObjectURL(file);
+  video.src = clip.url;
   playerCard.classList.remove('empty');
   setStatus('波形を解析しています...');
+  renderClipTray();
 
-  // Snapshot any prior autosave BEFORE init so we can offer restore.
-  // (Belt: we read it here. Suspenders: initTimeline's initial notify uses
-  //  opts.initial so the callback below won't persist the empty state.)
-  const saved = loadProject(file.name);
+  const saved = promptRestore ? loadProject(clip.name) : null;
 
   try {
-    await initTimeline(file, video, (ranges, opts = {}) => {
+    await initTimeline(clip.file, video, (ranges, opts = {}) => {
       cutRanges = ranges;
+      const ac = activeClip();
+      if (ac) { ac.ranges = ranges; ac.duration = video.duration; ac.hasAudio = getHasAudio(); }
       exportBtn.disabled = ranges.length === 0;
       renderRangesList(ranges);
-      // Any edit drops the transient hover (the hovered row may have just been
-      // deleted/renumbered); the pin (.selected) is identity-keyed and persists.
       setHotIndexExternal(-1);
       updateUndoRedo();
       updateMinimap();
       updateXLimit();
-      // Skip persistence during the initial reset — otherwise we'd clobber the
-      // saved project for this filename before the restore prompt can fire.
+      updateCombinedUI();
       if (!opts.initial) {
-        const ok = saveProject(file.name, { ranges, duration: video.duration });
+        const ok = saveProject(clip.name, { ranges, duration: video.duration });
         if (!ok && !autosaveWarned) {
           autosaveWarned = true;
           setStatus('⚠ 自動保存に失敗しました（ストレージ容量不足またはブラウザ設定）。書き出しは引き続き可能です。');
         }
       }
     });
+    clip.duration = video.duration;
+    clip.hasAudio = getHasAudio();
     silenceBtn.disabled = !getHasAudio();
     genSubBtn.disabled = !getHasAudio();
     captureFrameBtn.disabled = false;
-    // The X export is usable even with zero cuts (e.g. just making a HEVC/PS5
-    // clip X-uploadable), so enable it as soon as a file loads.
     xExportBtn.disabled = false;
     updateXLimit();
     setStatus('');
 
-    // Offer to restore previous session
-    if (saved && saved.ranges && saved.ranges.length > 0) {
+    if (savedRanges.length > 0) {
+      // Returning to an already-edited clip — restore its in-memory cuts.
+      addRanges(savedRanges);
+    } else if (saved && saved.ranges && saved.ranges.length > 0) {
       const ago = Math.round((Date.now() - (saved.savedAt || 0)) / 1000 / 60);
       if (confirm(`前回のカット範囲（${saved.ranges.length}件、${ago}分前）を復元しますか？`)) {
         addRanges(saved.ranges);
       } else {
-        // User declined — clear the stale autosave so we don't keep prompting.
-        saveProject(file.name, { ranges: [], duration: video.duration });
+        saveProject(clip.name, { ranges: [], duration: video.duration });
       }
     }
+    renderClipTray();
+    updateCombinedUI();
   } catch (err) {
     console.error(err);
     if (err && (err.message === 'UNSUPPORTED_MEDIA' || err.message === 'LOAD_TIMEOUT')) {
@@ -233,15 +312,66 @@ async function loadFile(file) {
     } else {
       setStatus('読み込みエラー: ' + (err.message || err));
     }
-    // Reset so the player doesn't sit on a broken/blank source and the user can
-    // pick another file.
-    if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); video.load(); }
-    currentFile = null;
-    xExportBtn.disabled = true;
-    genSubBtn.disabled = true;
-    updateXLimit();
-    playerCard.classList.add('empty');
+    // Drop the un-loadable clip from the set and fall back to another clip (or empty).
+    video.removeAttribute('src'); video.load();
+    removeClip(clip.id, { silent: true });
   }
+}
+
+// Remove a clip; if it was active, fall back to a neighbour (or the empty state).
+function removeClip(clipId, { silent = false } = {}) {
+  const idx = clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) return;
+  const [removed] = clips.splice(idx, 1);
+  try { if (removed.url) URL.revokeObjectURL(removed.url); } catch (_) {}
+  if (activeClipId === clipId) {
+    activeClipId = null;
+    if (clips.length > 0) {
+      openClip(clips[Math.min(idx, clips.length - 1)].id);
+    } else {
+      resetToEmpty();
+    }
+  } else {
+    renderClipTray();
+    updateCombinedUI();
+  }
+  if (!silent) setStatus('クリップを外しました。');
+}
+
+function moveClip(clipId, dir) {
+  const idx = clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) return;
+  const j = idx + dir;
+  if (j < 0 || j >= clips.length) return;
+  [clips[idx], clips[j]] = [clips[j], clips[idx]];
+  renderClipTray();
+  updateCombinedUI();
+}
+
+function clearAllClips() {
+  for (const c of clips) { try { if (c.url) URL.revokeObjectURL(c.url); } catch (_) {} }
+  clips = [];
+  activeClipId = null;
+  resetToEmpty();
+}
+
+// Return the editor to the no-clip empty state.
+function resetToEmpty() {
+  if (video.src) { try { video.removeAttribute('src'); video.load(); } catch (_) {} }
+  currentFile = null;
+  cutRanges = [];
+  clearRanges();
+  exportBtn.disabled = true;
+  xExportBtn.disabled = true;
+  genSubBtn.disabled = true;
+  silenceBtn.disabled = true;
+  captureFrameBtn.disabled = true;
+  playerCard.classList.add('empty');
+  resetSubtitlePanel();
+  updateXLimit();
+  renderClipTray();
+  updateCombinedUI();
+  setStatus('');
 }
 
 function setStatus(text) {
@@ -251,8 +381,8 @@ function setStatus(text) {
 
 // --- File input + drag-drop ---
 fileInput.addEventListener('change', async (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (file) await loadFile(file);
+  if (e.target.files && e.target.files.length) await handleIncomingFiles(e.target.files);
+  e.target.value = ''; // allow re-selecting the same file(s)
 });
 
 let dragCounter = 0;
@@ -276,8 +406,8 @@ window.addEventListener('drop', async (e) => {
   e.preventDefault();
   dragCounter = 0;
   document.body.classList.remove('drag-over');
-  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (file) await loadFile(file);
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) await handleIncomingFiles(files);
 });
 function hasFiles(e) {
   const dt = e.dataTransfer;
@@ -841,6 +971,166 @@ function updateXLimit() {
   xLimitBadge.textContent = `X(無料)目安 — 長さ ${mmss(outDur)} / 2:20 ・ サイズ 約${mb(estBytes)}MB / 512MB　${tail}`;
 }
 
+// --- Clip tray + combine ("highlights") ---
+// Post-edit output length of one clip (full minus cuts minus what speed-ups save).
+function clipOutputDuration(clip) {
+  const dur = clip.duration || 0;
+  let cut = 0, saved = 0;
+  for (const r of (clip.ranges || [])) {
+    const span = Math.max(0, r.end - r.start);
+    if (r.type === 'speedup') saved += span - span / (r.speed || 2);
+    else cut += span;
+  }
+  return Math.max(0, dur - cut - saved);
+}
+
+function renderClipTray() {
+  if (!clipTrayCard || !clipTrayList) return;
+  if (clips.length === 0) { clipTrayCard.hidden = true; clipTrayList.innerHTML = ''; return; }
+  clipTrayCard.hidden = false;
+  clipTrayList.innerHTML = '';
+  clips.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.className = 'clip-chip' + (c.id === activeClipId ? ' active' : '');
+    li.dataset.id = c.id;
+
+    const num = document.createElement('span');
+    num.className = 'clip-num';
+    num.textContent = i + 1;
+    li.appendChild(num);
+
+    const meta = document.createElement('div');
+    meta.className = 'clip-meta';
+    const name = document.createElement('span');
+    name.className = 'clip-name';
+    name.textContent = c.name;
+    name.title = c.name;
+    const sub = document.createElement('span');
+    sub.className = 'clip-sub';
+    sub.textContent = (c.id === activeClipId ? '編集中 · ' : '') + (c.duration ? fmtClock(clipOutputDuration(c)) : '…');
+    meta.appendChild(name);
+    meta.appendChild(sub);
+    li.appendChild(meta);
+
+    const ops = document.createElement('div');
+    ops.className = 'clip-ops';
+    const up = document.createElement('button');
+    up.className = 'clip-op'; up.textContent = '↑'; up.title = '前へ移動'; up.disabled = i === 0;
+    up.onclick = (e) => { e.stopPropagation(); moveClip(c.id, -1); };
+    const down = document.createElement('button');
+    down.className = 'clip-op'; down.textContent = '↓'; down.title = '後ろへ移動'; down.disabled = i === clips.length - 1;
+    down.onclick = (e) => { e.stopPropagation(); moveClip(c.id, 1); };
+    const del = document.createElement('button');
+    del.className = 'clip-op clip-del'; del.textContent = '✕'; del.title = 'このクリップを外す';
+    del.onclick = (e) => { e.stopPropagation(); removeClip(c.id); };
+    ops.appendChild(up); ops.appendChild(down); ops.appendChild(del);
+    li.appendChild(ops);
+
+    li.onclick = () => { if (c.id !== activeClipId && !exporting) openClip(c.id); };
+    clipTrayList.appendChild(li);
+  });
+}
+
+function updateCombinedUI() {
+  if (!combineBtn) return;
+  const multi = clips.length >= 2;
+  combineBtn.hidden = !multi;
+  if (combineHint) combineHint.hidden = !multi;
+  if (combineBadge) combineBadge.hidden = !multi;
+  combineBtn.disabled = exporting || !multi;
+  if (multi) updateCombinedBadge();
+}
+
+function updateCombinedBadge() {
+  if (!combineBadge) return;
+  let outDur = 0, estBytes = 0;
+  for (const c of clips) {
+    const od = clipOutputDuration(c);
+    outDur += od;
+    if (c.duration > 0) estBytes += (c.file.size || 0) * (od / c.duration);
+  }
+  const overDur = outDur > X_MAX_SECONDS;
+  const overSize = estBytes > X_MAX_BYTES;
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+  const mb = (b) => (b / 1024 / 1024).toFixed(0);
+  let tail;
+  if (overDur && overSize) tail = '⚠ 長さ・サイズ超過';
+  else if (overDur) tail = '⚠ 2:20 超過（もっとカットを）';
+  else if (overSize) tail = '⚠ 512MB 超過';
+  else tail = '✓ そのままXに投稿OK';
+  combineBadge.classList.toggle('over', overDur || overSize);
+  combineBadge.textContent = `つなげた長さ ${mmss(outDur)} / 2:20 ・ サイズ 約${mb(estBytes)}MB / 512MB　${tail}`;
+}
+
+async function doCombinedExport() {
+  if (clips.length < 2 || exporting) return;
+  const ac = activeClip();
+  if (ac) ac.ranges = getRanges(); // commit the active clip's in-progress edits
+
+  // Guard the race where combine is clicked before a just-added clip's metadata
+  // probe resolved: a clip with duration 0 would plan to zero segments and get
+  // silently dropped. Make sure every clip has a real duration first.
+  const needMeta = clips.filter((c) => !(c.duration > 0));
+  if (needMeta.length) {
+    setStatus('クリップ情報を確認中...');
+    await Promise.all(needMeta.map(probeClipMeta));
+  }
+
+  exporting = true;
+  exportBtn.disabled = true;
+  xExportBtn.disabled = true;
+  combineBtn.disabled = true;
+  const originalHTML = combineBtn.innerHTML;
+  combineBtn.textContent = '処理中...';
+  showProgress(true);
+  showCancelBtn(true);
+  try {
+    const url = await exportConcat(
+      clips.map((c) => ({ file: c.file, ranges: c.ranges, duration: c.duration, hasAudio: c.hasAudio })),
+      { onStatus: (m) => setStatus(m), onProgress: (p) => setProgress(p), aspect: aspectSelect.value }
+    );
+    setProgress(1);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ハイライト_${clips.length}本_for_X.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setStatus('完了。つなげたハイライトをXにアップロードできます（ダウンロードフォルダを確認）。');
+    setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
+  } catch (err) {
+    console.error('[combine] error:', err);
+    showProgress(false);
+    showCancelBtn(false);
+    setStatus('');
+    if (err && err.message && err.message.includes('__CANCELLED__')) {
+      setStatus('書き出しをキャンセルしました');
+    } else {
+      const pre = document.createElement('pre');
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.style.fontFamily = 'monospace';
+      pre.style.fontSize = '12px';
+      pre.style.color = '#A24D2E';
+      pre.style.marginTop = '6px';
+      pre.textContent = '結合に失敗:\n' + (err.message || String(err));
+      statusEl.appendChild(pre);
+    }
+  } finally {
+    exporting = false;
+    exportBtn.disabled = cutRanges.length === 0;
+    xExportBtn.disabled = !currentFile;
+    combineBtn.innerHTML = originalHTML;
+    updateCombinedUI();
+  }
+}
+
+if (addClipBtn) addClipBtn.addEventListener('click', () => fileInput.click());
+if (clearClipsBtn) clearClipsBtn.addEventListener('click', () => {
+  if (clips.length === 0 || exporting) return;
+  if (confirm('読み込んだクリップを全部外しますか？（カット内容は消えます）')) clearAllClips();
+});
+if (combineBtn) combineBtn.addEventListener('click', doCombinedExport);
+
 // --- Keyboard shortcuts ---
 document.addEventListener('keydown', (e) => {
   const tgt = e.target;
@@ -974,3 +1264,5 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
 // --- Initial UI state ---
 updateUndoRedo();
+renderClipTray();
+updateCombinedUI();

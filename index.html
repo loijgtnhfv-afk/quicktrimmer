@@ -52,7 +52,7 @@
         <label class="btn btn-ghost">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           動画を選択
-          <input type="file" id="fileInput" accept="video/*" hidden />
+          <input type="file" id="fileInput" accept="video/*" multiple hidden />
         </label>
         <button id="settingsBtn" class="btn btn-ghost icon-only" title="設定">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -72,6 +72,28 @@
     </header>
 
     <main>
+      <section class="card clip-tray-card" id="clipTrayCard" hidden>
+        <div class="clip-tray-head">
+          <div class="clip-tray-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>
+            クリップ <span class="clip-tray-sub">上から順に1本につながります</span>
+          </div>
+          <div class="clip-tray-actions">
+            <button id="addClipBtn" class="btn btn-ghost" type="button" title="動画をもう1本追加（ドラッグ＆ドロップでもOK）">＋ クリップを追加</button>
+            <button id="clearClipsBtn" class="btn btn-ghost" type="button" title="読み込んだクリップを全部外す">全部クリア</button>
+          </div>
+        </div>
+        <ul id="clipTrayList" class="clip-tray-list"></ul>
+        <div class="combine-row">
+          <button id="combineBtn" class="btn btn-x" type="button" hidden title="全クリップを上から順に1本のMP4につなげて、Xに上げられる形で書き出します">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            つなげて書き出し（X用）
+          </button>
+          <span id="combineHint" class="combine-hint" hidden>※ つなげると再エンコードされます（1本ずつの書き出しは無劣化のまま）</span>
+        </div>
+        <div id="combineBadge" class="x-limit" hidden></div>
+      </section>
+
       <section class="card player-card empty" id="playerCard">
         <div class="player-stage">
           <video id="player" controls></video>
