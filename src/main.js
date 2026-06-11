@@ -977,7 +977,7 @@ function updateXLimit() {
   if (overDur && overSize) tail = '⚠ 長さ・サイズ超過';
   else if (overDur) tail = '⚠ 2:20 超過（もっとカットを）';
   else if (overSize) tail = '⚠ 512MB 超過';
-  else tail = '✓ そのままXに投稿OK';
+  else tail = '✓ Xに投稿OK';
   xLimitBadge.hidden = false;
   xLimitBadge.classList.toggle('over', overDur || overSize);
   xLimitBadge.textContent = `X(無料)目安 — 長さ ${mmss(outDur)} / 2:20 ・ サイズ 約${mb(estBytes)}MB / 512MB　${tail}`;
@@ -1069,7 +1069,7 @@ function updateCombinedBadge() {
   if (overDur && overSize) tail = '⚠ 長さ・サイズ超過';
   else if (overDur) tail = '⚠ 2:20 超過（もっとカットを）';
   else if (overSize) tail = '⚠ 512MB 超過';
-  else tail = '✓ そのままXに投稿OK';
+  else tail = '✓ Xに投稿OK';
   combineBadge.classList.toggle('over', overDur || overSize);
   combineBadge.textContent = `つなげた長さ ${mmss(outDur)} / 2:20 ・ サイズ 約${mb(estBytes)}MB / 512MB　${tail}`;
 }
