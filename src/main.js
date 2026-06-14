@@ -49,6 +49,12 @@ const progressWrap = document.getElementById('progressWrap');
 const progressFill = document.getElementById('progressFill');
 const progressLabel = document.getElementById('progressLabel');
 const cancelExportBtn = document.getElementById('cancelExportBtn');
+const exportDonePanel = document.getElementById('exportDonePanel');
+const exportDoneMeta = document.getElementById('exportDoneMeta');
+const exportDoneHint = document.getElementById('exportDoneHint');
+const exportRedownloadBtn = document.getElementById('exportRedownloadBtn');
+const exportShareBtn = document.getElementById('exportShareBtn');
+const exportDoneClose = document.getElementById('exportDoneClose');
 const playerCard = document.getElementById('playerCard');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
@@ -379,6 +385,7 @@ function resetToEmpty() {
   captureFrameBtn.disabled = true;
   playerCard.classList.add('empty');
   resetSubtitlePanel();
+  hideExportDone();
   updateXLimit();
   renderClipTray();
   updateCombinedUI();
@@ -769,6 +776,82 @@ loadJsonInput.addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
+// --- Export completion panel ---
+// After a successful export we keep the result's object-URL alive (instead of the
+// old "revoke after 2s") and surface a panel with "download again" + "share", so a
+// missed/failed browser download no longer means re-running a multi-minute export.
+let lastExport = null; // { url, blob, filename }
+
+function clearLastExport() {
+  if (lastExport && lastExport.url) {
+    try { URL.revokeObjectURL(lastExport.url); } catch (_) {}
+  }
+  lastExport = null;
+}
+
+function hideExportDone() {
+  exportDonePanel.hidden = true;
+  clearLastExport();
+}
+
+function humanSize(bytes) {
+  if (!Number.isFinite(bytes)) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function triggerDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function showExportDone({ blob, url, filename, hint }) {
+  // Drop any previous result (revokes its URL); the new one stays alive until the
+  // panel is closed, the next export starts, or the project is reset.
+  clearLastExport();
+  lastExport = { url, blob, filename };
+  const size = humanSize(blob.size);
+  exportDoneMeta.textContent = size ? `${filename}（${size}）` : filename;
+  exportDoneHint.textContent = hint || '';
+  // Web Share with files is mostly mobile/Safari; show the button only when the
+  // browser can actually share this file, otherwise it would always reject.
+  let canShare = false;
+  try {
+    const probe = new File([blob], filename, { type: blob.type || 'video/mp4' });
+    canShare = !!(navigator.canShare && navigator.canShare({ files: [probe] }));
+  } catch (_) { canShare = false; }
+  exportShareBtn.hidden = !canShare;
+  exportDonePanel.hidden = false;
+}
+
+exportRedownloadBtn.addEventListener('click', () => {
+  if (!lastExport) return;
+  triggerDownload(lastExport.url, lastExport.filename);
+});
+
+exportShareBtn.addEventListener('click', async () => {
+  if (!lastExport) return;
+  try {
+    const file = new File([lastExport.blob], lastExport.filename, { type: lastExport.blob.type || 'video/mp4' });
+    if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+      setStatus('このブラウザはファイル共有に対応していません。「もう一度ダウンロード」をお使いください。');
+      return;
+    }
+    await navigator.share({ files: [file], title: 'QuickTrimmer' });
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // user dismissed the share sheet
+    console.error('[share] error:', err);
+    setStatus('共有できませんでした。「もう一度ダウンロード」をお使いください。');
+  }
+});
+
+exportDoneClose.addEventListener('click', hideExportDone);
+
 // --- Export ---
 exportBtn.addEventListener('click', () => doExport({ xOptimize: false }));
 xExportBtn.addEventListener('click', () => doExport({ xOptimize: true }));
@@ -782,13 +865,14 @@ async function doExport({ xOptimize }) {
   exporting = true;
   exportBtn.disabled = true;
   xExportBtn.disabled = true;
+  hideExportDone(); // clear any previous result panel (and revoke its URL)
   const activeBtn = xOptimize ? xExportBtn : exportBtn;
   const originalHTML = activeBtn.innerHTML;
   activeBtn.textContent = '処理中...';
   showProgress(true);
   showCancelBtn(true);
   try {
-    const url = await exportVideo(currentFile, cutRanges, video.duration, {
+    const blob = await exportVideo(currentFile, cutRanges, video.duration, {
       onStatus: (msg) => { setStatus(msg); },
       onProgress: (p) => setProgress(p),
       hasAudio: getHasAudio(),
@@ -799,20 +883,17 @@ async function doExport({ xOptimize }) {
       normalizeAudio: normalizeAudioChk.checked,
     });
     setProgress(1);
-    const a = document.createElement('a');
-    a.href = url;
+    const url = URL.createObjectURL(blob);
     const base = (currentFile.name || 'video').replace(/\.[^.]+$/, '');
     const ext = xOptimize
       ? '.mp4'
       : (formatSelect.value === 'webm' ? '.webm' : (formatSelect.value === 'gif' ? '.gif' : '.mp4'));
-    a.download = xOptimize ? `${base}_for_X${ext}` : `${base}_trimmed${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000); // free the exported blob
-    setStatus(xOptimize
-      ? '完了。Xにそのままアップロードできます（ダウンロードフォルダを確認）。'
-      : '完了。ダウンロードフォルダを確認してください。');
+    const filename = xOptimize ? `${base}_for_X${ext}` : `${base}_trimmed${ext}`;
+    triggerDownload(url, filename);
+    showExportDone({ blob, url, filename, hint: xOptimize
+      ? 'Xにそのままアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。'
+      : 'ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
+    setStatus('書き出し完了！');
     setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
   } catch (err) {
     console.error('[export] error:', err);
@@ -1099,24 +1180,23 @@ async function doCombinedExport() {
   exportBtn.disabled = true;
   xExportBtn.disabled = true;
   combineBtn.disabled = true;
+  hideExportDone(); // clear any previous result panel (and revoke its URL)
   const originalHTML = combineBtn.innerHTML;
   combineBtn.textContent = '処理中...';
   showProgress(true);
   showCancelBtn(true);
   try {
-    const url = await exportConcat(
+    const blob = await exportConcat(
       clips.map((c) => ({ file: c.file, ranges: c.ranges, duration: c.duration, hasAudio: c.hasAudio })),
       { onStatus: (m) => setStatus(m), onProgress: (p) => setProgress(p), aspect: aspectSelect.value }
     );
     setProgress(1);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ハイライト_${clips.length}本_for_X.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000); // free the combined blob
-    setStatus('完了。つなげたハイライトをXにアップロードできます（ダウンロードフォルダを確認）。');
+    const url = URL.createObjectURL(blob);
+    const filename = `ハイライト_${clips.length}本_for_X.mp4`;
+    triggerDownload(url, filename);
+    showExportDone({ blob, url, filename,
+      hint: 'つなげたハイライトをXにアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
+    setStatus('結合して書き出し完了！');
     setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
   } catch (err) {
     console.error('[combine] error:', err);

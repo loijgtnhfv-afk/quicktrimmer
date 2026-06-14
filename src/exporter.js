@@ -394,6 +394,8 @@ async function exportForX(ff, inputName, ranges, duration, hasAudio, aspect, sta
 }
 
 // ---------- Main export ----------
+// Returns the output as a Blob (the caller owns the object-URL lifecycle so the
+// export-done panel can keep it alive and revoke it on close).
 export async function exportVideo(file, ranges, duration, options = {}) {
   const status = options.onStatus || (() => {});
   const onProgress = options.onProgress || (() => {});
@@ -413,9 +415,10 @@ export async function exportVideo(file, ranges, duration, options = {}) {
   try { ff = await getFFmpeg(); }
   catch (err) { throw new Error('FFmpeg の読み込みに失敗: ' + (err.message || err)); }
 
+  let inputName = null;
   try {
     const ext = getExt(file.name);
-    const inputName = 'input' + ext;
+    inputName = 'input' + ext;
     status('動画ファイルを準備中...');
     await ff.writeFile(inputName, await fetchFile(file));
 
@@ -426,7 +429,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     // transcode only for HEVC/AV1/VP9/Opus sources or speed-up ranges.
     if (options.xOptimize) {
       const blob = await exportForX(ff, inputName, ranges, duration, hasAudio, aspect, status, onProgress);
-      return URL.createObjectURL(blob);
+      return blob;
     }
 
     // Decide whether stream-copy is possible.
@@ -452,7 +455,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
         const data = await exportStreamCopy(ff, inputName, keep, status, onProgress);
         status('完了！（高速モード・画質ロスなし）');
         outputBlob = new Blob([data.buffer], { type: 'video/mp4' });
-        return URL.createObjectURL(outputBlob);
+        return outputBlob;
       } catch (err) {
         if (requestedMode === 'fast') throw err;
         console.warn('[exporter] stream copy failed:', err);
@@ -469,7 +472,7 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     const mime = outExt === '.webm' ? 'video/webm' : (outExt === '.gif' ? 'image/gif' : 'video/mp4');
     status('完了！');
     outputBlob = new Blob([data.buffer], { type: mime });
-    return URL.createObjectURL(outputBlob);
+    return outputBlob;
   } catch (err) {
     const msg = (err && err.message) ? err.message : String(err);
     // A cancel during re-encode rejects ff.exec() with a terminate error rather
@@ -482,6 +485,12 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     }
     const tail = tailLog(20);
     throw new Error(`${msg}\n\n--- FFmpeg log (最後の20行) ---\n${tail || '(ログなし)'}`);
+  } finally {
+    // Free the MEMFS input we wrote at the top — the single-export path never did
+    // this, so each export leaked its whole input file into the ffmpeg.wasm heap
+    // (the multi-clip path already deletes its inputs). The output bytes are
+    // already read into a JS Blob above, so deleting the input here is safe.
+    if (inputName) { try { await ff.deleteFile(inputName); } catch (_) {} }
   }
 }
 
@@ -581,7 +590,7 @@ async function encodeClipToTs(ff, inputName, segments, hasAudio, canvas, outName
   if (code !== 0) throw new Error(`クリップのエンコードに失敗 (exit ${code})`);
 }
 
-// clips: [{ file, ranges, duration, hasAudio }]. Output: a combined X-ready .mp4 URL.
+// clips: [{ file, ranges, duration, hasAudio }]. Output: a combined X-ready .mp4 Blob.
 export async function exportConcat(clips, options = {}) {
   const status = options.onStatus || (() => {});
   const onProgress = options.onProgress || (() => {});
@@ -653,7 +662,7 @@ export async function exportConcat(clips, options = {}) {
     onProgress(1);
     for (const f of tempFiles) { try { await ff.deleteFile(f); } catch (_) {} }
     status('完了！つなげたハイライトをXにアップロードできます。');
-    return URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+    return new Blob([data.buffer], { type: 'video/mp4' });
   } catch (err) {
     // Best-effort MEMFS cleanup by REAL tracked names (plans was filtered+reindexed,
     // so recomputing names from the original clips[] would miss/mis-target files).

@@ -276,6 +276,22 @@
           <button id="cancelExportBtn" hidden>キャンセル</button>
         </div>
         <div id="status"></div>
+
+        <div id="exportDonePanel" class="export-done" hidden>
+          <div class="export-done-head">
+            <span class="export-done-icon" aria-hidden="true">✓</span>
+            <div class="export-done-text">
+              <strong>書き出し完了</strong>
+              <span id="exportDoneMeta" class="export-done-meta"></span>
+            </div>
+            <button id="exportDoneClose" class="btn btn-ghost icon-only" type="button" title="閉じる">✕</button>
+          </div>
+          <p id="exportDoneHint" class="export-done-hint"></p>
+          <div class="export-done-actions">
+            <button id="exportRedownloadBtn" class="btn btn-primary" type="button" title="もう一度ダウンロードフォルダに保存">⬇ もう一度ダウンロード</button>
+            <button id="exportShareBtn" class="btn btn-x" type="button" hidden title="ほかのアプリに直接共有">共有…</button>
+          </div>
+        </div>
       </section>
     </main>
 
