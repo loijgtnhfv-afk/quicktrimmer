@@ -776,7 +776,9 @@ function renderRanges() {
     el.dataset.key = keyOf(r);
     el.style.left = Math.max(0, left) + 'px';
     el.style.width = (Math.min(rect.width, right) - Math.max(0, left)) + 'px';
-    el.title = r.type === 'speedup' ? `${r.speed}x 倍速（右クリックで削除）` : '右クリックで削除';
+    el.title = r.type === 'speedup'
+      ? `${r.speed}x 倍速（右クリックで取り消し）`
+      : 'この部分が書き出しで削除されます（右クリックで取り消し）';
 
     // Number badge — same digit as the list row, so the eye pairs them at a glance.
     const num = document.createElement('span');
@@ -784,12 +786,17 @@ function renderRanges() {
     num.textContent = i + 1;
     el.appendChild(num);
 
+    // Effect label so a first-timer reads the band as "this disappears": cut bands
+    // say 削除, speed bands say their multiplier (mirrors each other, top-right).
+    const label = document.createElement('span');
     if (r.type === 'speedup') {
-      const label = document.createElement('span');
       label.className = 'speedup-label';
       label.textContent = `${r.speed}x`;
-      el.appendChild(label);
+    } else {
+      label.className = 'cut-label';
+      label.textContent = '削除';
     }
+    el.appendChild(label);
 
     const lh = document.createElement('div');
     lh.className = 'range-handle left';

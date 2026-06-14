@@ -9,6 +9,8 @@ const coreURL = new URL('ffmpeg/ffmpeg-core.js', window.location.origin + '/').h
 const wasmURL = new URL('ffmpeg/ffmpeg-core.wasm', window.location.origin + '/').href;
 
 let ffmpegInstance = null;
+let ffmpegLoading = null;   // in-flight load promise (dedupes preload + first export racing)
+let loadGeneration = 0;     // bumped by cancelExport() to disown an in-flight load
 let logBuffer = [];
 let cancelRequested = false;
 
@@ -22,6 +24,11 @@ export function cancelExport() {
     }
     ffmpegInstance = null;
   }
+  // Disown any in-flight load: bumping the generation makes the resolving loader
+  // terminate its (now orphaned) instance instead of installing it, and clearing
+  // the promise lets the next export start a fresh load.
+  loadGeneration++;
+  ffmpegLoading = null;
 }
 
 function throwIfCancelled() {
@@ -42,14 +49,39 @@ function tailLog(n) { return logBuffer.slice(-n).join('\n'); }
 
 async function getFFmpeg() {
   if (ffmpegInstance) return ffmpegInstance;
-  const ff = new FFmpeg();
-  ff.on('log', ({ type, message }) => {
-    pushLog(`[${type}] ${message}`);
-    console.log('[ffmpeg]', message);
-  });
-  await ff.load({ coreURL, wasmURL });
-  ffmpegInstance = ff;
-  return ff;
+  // Dedupe concurrent loads: preloadFFmpeg() may have a load in flight when the
+  // user clicks export. Without this guard both would `new FFmpeg().load()`,
+  // fetching the ~32MB core twice and leaking the first instance.
+  if (!ffmpegLoading) {
+    const gen = loadGeneration;
+    ffmpegLoading = (async () => {
+      const ff = new FFmpeg();
+      ff.on('log', ({ type, message }) => {
+        pushLog(`[${type}] ${message}`);
+        console.log('[ffmpeg]', message);
+      });
+      await ff.load({ coreURL, wasmURL });
+      // If cancelExport() ran while we were loading, this instance is orphaned —
+      // terminate it rather than installing a half-cancelled core for the next export.
+      if (gen !== loadGeneration) {
+        try { ff.terminate(); } catch (_) {}
+        throw new Error('__CANCELLED__');
+      }
+      ffmpegInstance = ff;
+      return ff;
+    })().catch((err) => {
+      if (gen === loadGeneration) ffmpegLoading = null; // allow retry after a failed load
+      throw err;
+    });
+  }
+  return ffmpegLoading;
+}
+
+// Fire-and-forget warm-up: start fetching/instantiating the core so the FIRST
+// export doesn't stall on the ~32MB download. Safe to call repeatedly; errors are
+// swallowed here (the real export surfaces them).
+export function preloadFFmpeg() {
+  try { getFFmpeg().catch(() => {}); } catch (_) {}
 }
 
 function getExt(name) {

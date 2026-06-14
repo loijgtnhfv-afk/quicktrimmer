@@ -24,7 +24,7 @@ import {
   onHot,
   onSelect,
 } from './timeline.js';
-import { exportVideo, exportConcat, cancelExport } from './exporter.js';
+import { exportVideo, exportConcat, cancelExport, preloadFFmpeg } from './exporter.js';
 import { detectSilences } from './silence.js';
 import { transcribe, toSRT, toVTT } from './subtitles.js';
 import { saveProject, loadProject, downloadProjectJson, parseProjectJson } from './storage.js';
@@ -162,6 +162,7 @@ const X_MAX_BYTES = 512 * 1024 * 1024;
 function applySettingsToUI() {
   formatSelect.value = settings.defaultFormat;
   heightSelect.value = settings.defaultHeight;
+  aspectSelect.value = settings.defaultAspect;
   normalizeAudioChk.checked = settings.normalizeAudio;
   // Settings modal fields
   silenceThreshold.value = settings.silenceThreshold;
@@ -308,6 +309,9 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
     xExportBtn.disabled = false;
     updateXLimit();
     setStatus('');
+    // Warm up ffmpeg.wasm now (clip is loaded, user is about to mark cuts) so the
+    // first export doesn't stall on the ~32MB core download.
+    preloadFFmpeg();
 
     if (savedRanges.length > 0) {
       // Returning to an already-edited clip — restore its in-memory cuts.
@@ -1278,7 +1282,7 @@ document.addEventListener('keydown', (e) => {
     for (let i = 0; i < rs.length; i++) {
       if (t >= rs[i].start && t <= rs[i].end) {
         removeRangeAt(i);
-        setStatus('再生位置の範囲を削除しました');
+        setStatus('再生位置の範囲を取り消しました');
         return;
       }
     }
@@ -1328,6 +1332,9 @@ formatSelect.addEventListener('change', () => {
 });
 heightSelect.addEventListener('change', () => {
   settings = saveSettings({ defaultHeight: heightSelect.value });
+});
+aspectSelect.addEventListener('change', () => {
+  settings = saveSettings({ defaultAspect: aspectSelect.value });
 });
 resetSettingsBtn.addEventListener('click', () => {
   if (confirm('設定をデフォルトに戻しますか？')) {

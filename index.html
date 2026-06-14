@@ -139,8 +139,8 @@
             </button>
           </div>
           <div class="toolbar-group seg-group" title="左ドラッグで作る範囲の種類">
-            <button id="modeCutBtn" class="seg-btn active" type="button" title="ドラッグでカット範囲を作成">✂ カット</button>
-            <button id="modeSpeedBtn" class="seg-btn" type="button" title="ドラッグで倍速範囲を作成">⏩ 倍速</button>
+            <button id="modeCutBtn" class="seg-btn active" type="button" title="ドラッグした部分が書き出しで削除されます（残りがつながる）">✂ カット</button>
+            <button id="modeSpeedBtn" class="seg-btn" type="button" title="ドラッグした部分が倍速になります">⏩ 倍速</button>
             <select id="dragSpeedSelect" class="seg-speed" title="倍速の速さ" hidden>
               <option value="2" selected>2倍</option>
               <option value="4">4倍</option>
@@ -167,11 +167,12 @@
           <div class="toolbar-group toolbar-right">
             <div class="legend">
               <span class="legend-item" id="legendDrag"><span class="dot dot-add"></span>左ドラッグ=カット</span>
-              <span class="legend-item"><span class="dot dot-sub"></span>右ドラッグ=削除</span>
+              <span class="legend-item"><span class="dot dot-sub"></span>右ドラッグ=取り消し</span>
               <span class="legend-item"><span class="kbd">Wheel</span> ズーム</span>
             </div>
           </div>
         </div>
+        <div class="timeline-hint">🗑️ 色のついた部分が、書き出しのときに<b>削除</b>されます（残った部分がつながって1本になります）</div>
         <div id="timelineWrapper">
           <div id="timelineContainer">
             <canvas id="waveform"></canvas>
@@ -311,7 +312,7 @@
           <div><span class="kbd">P</span> カット後プレビュー再生 ON/OFF</div>
           <div><span class="kbd">Ctrl</span>+<span class="kbd">Z</span> 元に戻す</div>
           <div><span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">Z</span> やり直し</div>
-          <div><span class="kbd">Delete</span> 再生位置にある範囲を削除</div>
+          <div><span class="kbd">Delete</span> 再生位置にある範囲を取り消し</div>
           <div><span class="kbd">Wheel</span> タイムラインのズーム / <span class="kbd">Shift</span>+<span class="kbd">Wheel</span> パン</div>
         </div>
       </div>

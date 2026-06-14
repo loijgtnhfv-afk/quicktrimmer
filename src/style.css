@@ -257,6 +257,8 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.timeline-hint { margin: 0 0 8px; font-size: 12px; color: var(--text); line-height: 1.5; }
+.timeline-hint b { color: var(--accent); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 .dot-add { background: var(--accent); }
 .dot-sub { background: var(--positive); }
@@ -359,6 +361,21 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 }
 /* On a speedup bar the number chip takes the top-left, so the 2x label moves right. */
 .range-selection.speedup .speedup-label { left: auto; right: 6px; }
+
+/* "削除" pill on cut bands — top-right so it never collides with the number chip
+   (top-left). Makes "the painted part disappears" legible at a glance. */
+.cut-label {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 1px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
 
 /* Number badge on a waveform bar — pairs with the same digit in the list row. */
 .range-num {

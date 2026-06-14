@@ -8,6 +8,7 @@ export const DEFAULTS = Object.freeze({
   silencePadding: 0.1,
   defaultFormat: 'mp4',
   defaultHeight: 'original',
+  defaultAspect: 'original',
   normalizeAudio: false,
 });
 
