@@ -296,6 +296,14 @@
       </section>
     </main>
 
+    <footer class="site-footer">
+      <span class="footer-copy">© 2026 ぬんざわ · QuickTrimmer</span>
+      <nav class="footer-links">
+        <button type="button" class="footer-link" id="legalBtn">プライバシー・利用規約</button>
+        <a class="footer-link" href="https://x.com/sanuntea" target="_blank" rel="noopener noreferrer">お問い合わせ（X）</a>
+      </nav>
+    </footer>
+
     <div id="helpModal" class="modal" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-body">
@@ -376,6 +384,34 @@
           <div class="setting-row">
             <button id="resetSettingsBtn" class="btn btn-ghost" style="align-self:flex-start;">設定をリセット</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="legalModal" class="modal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-body legal-body">
+        <header>
+          <h3>プライバシー・利用規約</h3>
+          <button class="btn btn-ghost icon-only" data-close>✕</button>
+        </header>
+        <div class="legal-content">
+          <h4>プライバシーポリシー</h4>
+          <ul>
+            <li><strong>動画はあなたの端末から出ません。</strong>選んだ動画はブラウザの中だけで処理され（ffmpeg.wasm）、サーバーへは一切アップロードされません。作者が動画の中身を見ることはできません。</li>
+            <li><strong>保存内容は端末の中だけ。</strong>プロジェクトの保存データや設定は、お使いのブラウザの localStorage にのみ残ります。これも外部には送信されません。</li>
+            <li><strong>アクセス解析。</strong>表示回数や表示速度の集計に Vercel Web Analytics / Speed Insights を使っています。Cookie は使わず、個人を特定しない統計のみで、動画の内容は一切含まれません。</li>
+            <li><strong>アカウント不要。</strong>登録・ログインはありません。</li>
+          </ul>
+          <h4>利用規約</h4>
+          <ul>
+            <li>本ツールは現状有姿（as-is）で提供され、特定の目的への適合性や、不具合・データ消失が起きないことを保証しません。</li>
+            <li>書き出し結果や元データの破損・消失について、作者は責任を負いません。大切な元動画は必ず別途バックアップしてください。</li>
+            <li>処理する動画の権利・内容については、利用者ご自身の責任となります。</li>
+            <li>本ツールは GPL-3.0-or-later のオープンソースとして配布されています（同梱の ffmpeg が GPL ビルドのため）。</li>
+            <li>本ポリシー・規約は予告なく変更されることがあります。</li>
+          </ul>
+          <p class="legal-updated">最終更新: 2026-06-15</p>
         </div>
       </div>
     </div>

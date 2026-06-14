@@ -76,6 +76,8 @@ const helpBtn = document.getElementById('helpBtn');
 const helpModal = document.getElementById('helpModal');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsModal = document.getElementById('settingsModal');
+const legalBtn = document.getElementById('legalBtn');
+const legalModal = document.getElementById('legalModal');
 const installBtn = document.getElementById('installBtn');
 
 // Multi-clip ("highlights") refs
@@ -1271,6 +1273,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (!helpModal.hidden) helpModal.hidden = true;
     if (!settingsModal.hidden) settingsModal.hidden = true;
+    if (!legalModal.hidden) legalModal.hidden = true;
   } else if (e.key.toLowerCase() === 'p' && !ctrl) {
     e.preventDefault();
     togglePreview();
@@ -1295,6 +1298,8 @@ helpBtn.addEventListener('click', () => { helpModal.hidden = false; });
 helpModal.addEventListener('click', (e) => { if (e.target.dataset.close !== undefined) helpModal.hidden = true; });
 settingsBtn.addEventListener('click', () => { applySettingsToUI(); settingsModal.hidden = false; });
 settingsModal.addEventListener('click', (e) => { if (e.target.dataset.close !== undefined) settingsModal.hidden = true; });
+legalBtn.addEventListener('click', () => { legalModal.hidden = false; });
+legalModal.addEventListener('click', (e) => { if (e.target.dataset.close !== undefined) legalModal.hidden = true; });
 
 // --- Settings live updates ---
 silenceThreshold.addEventListener('input', () => {
