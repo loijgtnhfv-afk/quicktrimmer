@@ -49,6 +49,7 @@ const progressWrap = document.getElementById('progressWrap');
 const progressFill = document.getElementById('progressFill');
 const progressLabel = document.getElementById('progressLabel');
 const cancelExportBtn = document.getElementById('cancelExportBtn');
+const timelineContainer = document.getElementById('timelineContainer');
 const exportDonePanel = document.getElementById('exportDonePanel');
 const exportDoneMeta = document.getElementById('exportDoneMeta');
 const exportDoneHint = document.getElementById('exportDoneHint');
@@ -279,6 +280,7 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
   video.src = clip.url;
   playerCard.classList.remove('empty');
   setStatus('波形を解析しています...');
+  timelineContainer.classList.add('analyzing'); // spinner overlay until the waveform decode finishes (big clips take a few seconds)
   renderClipTray();
 
   const saved = promptRestore ? loadProject(clip.name) : null;
@@ -338,6 +340,10 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
     // Drop the un-loadable clip from the set and fall back to another clip (or empty).
     video.removeAttribute('src'); video.load();
     removeClip(clip.id, { silent: true });
+  } finally {
+    // Clear the waveform-loading overlay no matter how init ended (success, error,
+    // or an unsupported-media reject), so it never sticks on screen.
+    timelineContainer.classList.remove('analyzing');
   }
 }
 
