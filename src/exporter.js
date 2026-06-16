@@ -2,8 +2,7 @@
 // Default mode for pure cuts: stream copy (no re-encode, no quality loss).
 // If any range is "speedup" OR resolution/format options are set, switches to re-encode.
 
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
 
 const coreURL = new URL('ffmpeg/ffmpeg-core.js', window.location.origin + '/').href;
 const wasmURL = new URL('ffmpeg/ffmpeg-core.wasm', window.location.origin + '/').href;
@@ -82,6 +81,28 @@ async function getFFmpeg() {
 // swallowed here (the real export surfaces them).
 export function preloadFFmpeg() {
   try { getFFmpeg().catch(() => {}); } catch (_) {}
+}
+
+// Mount a File as a read-only WORKERFS input instead of copying its bytes into
+// MEMFS. For multi-hundred-MB game clips this keeps the whole input OUT of the
+// ffmpeg.wasm heap — the old `writeFile(await fetchFile(file))` path held the
+// input twice (the File in JS + a full Uint8Array copy inside wasm), spiking peak
+// memory and crashing on large clips. Returns the in-wasm path to feed as `-i`.
+// Uses `blobs` (not `files`) so the in-wasm name is OUR fixed ASCII name, not the
+// source's real filename — keeps the in-wasm path predictable regardless of spaces
+// or Japanese in it. (Defensive: exec args pass fine as an array, but a concat-list
+// or filter string we build from the name later would not tolerate odd characters.)
+async function mountInput(ff, dir, baseName, file) {
+  try { await ff.createDir(dir); } catch (_) {} // ignore "exists" left by a prior run
+  await ff.mount(FFFSType.WORKERFS, { blobs: [{ name: baseName, data: file }] }, dir);
+  return `${dir}/${baseName}`;
+}
+
+// Tear down a WORKERFS mount + its MEMFS mountpoint. Best-effort: a terminated
+// worker (cancel) makes these throw, which callers swallow.
+async function unmountInput(ff, dir) {
+  try { await ff.unmount(dir); } catch (_) {}
+  try { await ff.deleteDir(dir); } catch (_) {}
 }
 
 function getExt(name) {
@@ -447,12 +468,13 @@ export async function exportVideo(file, ranges, duration, options = {}) {
   try { ff = await getFFmpeg(); }
   catch (err) { throw new Error('FFmpeg の読み込みに失敗: ' + (err.message || err)); }
 
-  let inputName = null;
+  let inputDir = null;
   try {
     const ext = getExt(file.name);
-    inputName = 'input' + ext;
+    inputDir = '/in';
     status('動画ファイルを準備中...');
-    await ff.writeFile(inputName, await fetchFile(file));
+    // WORKERFS-mount the source (no MEMFS copy). inputName is the in-wasm path.
+    const inputName = await mountInput(ff, inputDir, 'input' + ext, file);
 
     throwIfCancelled();
 
@@ -518,11 +540,10 @@ export async function exportVideo(file, ranges, duration, options = {}) {
     const tail = tailLog(20);
     throw new Error(`${msg}\n\n--- FFmpeg log (最後の20行) ---\n${tail || '(ログなし)'}`);
   } finally {
-    // Free the MEMFS input we wrote at the top — the single-export path never did
-    // this, so each export leaked its whole input file into the ffmpeg.wasm heap
-    // (the multi-clip path already deletes its inputs). The output bytes are
-    // already read into a JS Blob above, so deleting the input here is safe.
-    if (inputName) { try { await ff.deleteFile(inputName); } catch (_) {} }
+    // Release the WORKERFS-mounted input. No MEMFS copy was ever made, so there's
+    // nothing to deleteFile — just unmount + drop the mountpoint dir. The output
+    // bytes are already read into a JS Blob above, so this is safe.
+    if (inputDir) { await unmountInput(ff, inputDir); }
   }
 }
 
@@ -646,15 +667,17 @@ export async function exportConcat(clips, options = {}) {
 
   const tsFiles = [];
   const tempFiles = []; // every MEMFS path we create, so cleanup uses real names
+  let mountedDir = null; // WORKERFS mount held this iteration (unmounted before the next)
   try {
     const N = plans.length;
     for (let i = 0; i < N; i++) {
       throwIfCancelled();
       const { clip, segments } = plans[i];
-      const inputName = `cin${i}${getExt(clip.file.name)}`;
-      tempFiles.push(inputName);
+      const dir = `/cin${i}`;
       status(`クリップ ${i + 1}/${N} を準備中...`);
-      await ff.writeFile(inputName, await fetchFile(clip.file));
+      // WORKERFS-mount this clip's source (no MEMFS copy of the whole file).
+      const inputName = await mountInput(ff, dir, `cin${i}${getExt(clip.file.name)}`, clip.file);
+      mountedDir = dir;
       throwIfCancelled();
 
       // Ground-truth audio presence per clip (don't trust an upstream flag): a clip
@@ -672,9 +695,10 @@ export async function exportConcat(clips, options = {}) {
         (p) => onProgress((i + p) / (N + 1))
       );
       tsFiles.push(tsName);
-      // Free the source immediately so peak MEMFS stays ~one clip + the (small,
-      // H.264-compressed) intermediates.
-      try { await ff.deleteFile(inputName); } catch (_) {}
+      // Unmount the source immediately so only ONE clip's bytes are ever mapped —
+      // peak memory stays ~one clip + the (small, H.264-compressed) intermediates.
+      await unmountInput(ff, dir);
+      mountedDir = null;
     }
 
     throwIfCancelled();
@@ -696,10 +720,11 @@ export async function exportConcat(clips, options = {}) {
     status('完了！つなげたハイライトをXにアップロードできます。');
     return new Blob([data.buffer], { type: 'video/mp4' });
   } catch (err) {
-    // Best-effort MEMFS cleanup by REAL tracked names (plans was filtered+reindexed,
-    // so recomputing names from the original clips[] would miss/mis-target files).
+    // Best-effort cleanup by REAL tracked names (plans was filtered+reindexed, so
+    // recomputing names from the original clips[] would miss/mis-target files).
     // Skip if the worker was already terminated by cancel.
     if (!cancelRequested) {
+      if (mountedDir) await unmountInput(ff, mountedDir);
       for (const f of tempFiles) { try { await ff.deleteFile(f); } catch (_) {} }
     }
     const msg = (err && err.message) ? err.message : String(err);
