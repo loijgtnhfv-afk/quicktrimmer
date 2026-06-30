@@ -71,6 +71,7 @@ const formatSelect = document.getElementById('formatSelect');
 const heightSelect = document.getElementById('heightSelect');
 const aspectSelect = document.getElementById('aspectSelect');
 const normalizeAudioChk = document.getElementById('normalizeAudioChk');
+const notifyOnDoneChk = document.getElementById('notifyOnDoneChk');
 const saveJsonBtn = document.getElementById('saveJsonBtn');
 const loadJsonInput = document.getElementById('loadJsonInput');
 const helpBtn = document.getElementById('helpBtn');
@@ -167,6 +168,7 @@ function applySettingsToUI() {
   heightSelect.value = settings.defaultHeight;
   aspectSelect.value = settings.defaultAspect;
   normalizeAudioChk.checked = settings.normalizeAudio;
+  if (notifyOnDoneChk) notifyOnDoneChk.checked = settings.notifyOnDone;
   // Settings modal fields
   silenceThreshold.value = settings.silenceThreshold;
   silenceMinDuration.value = settings.silenceMinDuration;
@@ -586,9 +588,16 @@ function applyDragTool() {
       : '<span class="dot dot-add"></span>左ドラッグ=カット';
   }
 }
-modeCutBtn.addEventListener('click', () => { speedDragMode = false; applyDragTool(); });
-modeSpeedBtn.addEventListener('click', () => { speedDragMode = true; applyDragTool(); });
-dragSpeedSelect.addEventListener('change', () => { if (speedDragMode) applyDragTool(); });
+modeCutBtn.addEventListener('click', () => { speedDragMode = false; applyDragTool(); settings = saveSettings({ defaultDragMode: 'cut' }); });
+modeSpeedBtn.addEventListener('click', () => { speedDragMode = true; applyDragTool(); settings = saveSettings({ defaultDragMode: 'speedup' }); });
+dragSpeedSelect.addEventListener('change', () => { settings = saveSettings({ defaultDragSpeed: parseInt(dragSpeedSelect.value, 10) || 2 }); if (speedDragMode) applyDragTool(); });
+
+// Restore the saved left-drag tool + speed (③). Placed AFTER the declarations
+// above (speedDragMode / applyDragTool / dragSpeedSelect) to avoid the TDZ that
+// would hit if applySettingsToUI() touched speedDragMode at module-init time.
+if (settings.defaultDragSpeed) dragSpeedSelect.value = String(settings.defaultDragSpeed);
+speedDragMode = settings.defaultDragMode === 'speedup';
+applyDragTool();
 
 // --- Timeline ↔ list correspondence: light/scroll the list row when the
 //     matching waveform bar is hovered (onHot) or pinned (onSelect). Registered
@@ -894,6 +903,33 @@ exportShareBtn.addEventListener('click', async () => {
 
 exportDoneClose.addEventListener('click', hideExportDone);
 
+// --- Export-done notification (②) ---
+// Gamers alt-tab into their game while a clip transcodes, so the on-screen panel
+// alone is easy to miss. When the tab is hidden at completion we (a) flash the tab
+// title (always, no permission needed — visible in the taskbar/tab strip) and
+// (b) fire a desktop Notification if the user opted in AND granted permission.
+let _titleSaved = null;
+function flashTitle(text) {
+  if (_titleSaved === null) _titleSaved = document.title;
+  document.title = text;
+}
+function restoreTitle() {
+  if (_titleSaved !== null) { document.title = _titleSaved; _titleSaved = null; }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) restoreTitle(); });
+window.addEventListener('focus', restoreTitle);
+
+function notifyExportDone(message) {
+  if (!document.hidden) return; // looking at the tab — the on-screen panel is enough
+  flashTitle('✅ 書き出し完了！');
+  if (settings.notifyOnDone && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      const n = new Notification('QuickTrimmer', { body: message, icon: '/icons/icon.svg' });
+      n.onclick = () => { try { window.focus(); } catch (_) {} n.close(); };
+    } catch (_) {}
+  }
+}
+
 // --- Export ---
 exportBtn.addEventListener('click', () => doExport({ xOptimize: false }));
 xExportBtn.addEventListener('click', () => doExport({ xOptimize: true }));
@@ -936,6 +972,7 @@ async function doExport({ xOptimize }) {
       ? 'Xにそのままアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。'
       : 'ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
     setStatus('書き出し完了！');
+    notifyExportDone(xOptimize ? 'X用の書き出しが完了しました' : '書き出しが完了しました');
     setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
   } catch (err) {
     console.error('[export] error:', err);
@@ -1239,6 +1276,7 @@ async function doCombinedExport() {
     showExportDone({ blob, url, filename,
       hint: 'つなげたハイライトをXにアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
     setStatus('結合して書き出し完了！');
+    notifyExportDone('ハイライトの結合・書き出しが完了しました');
     setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
   } catch (err) {
     console.error('[combine] error:', err);
@@ -1276,6 +1314,19 @@ if (combineBtn) combineBtn.addEventListener('click', doCombinedExport);
 // --- Keyboard shortcuts ---
 document.addEventListener('keydown', (e) => {
   const tgt = e.target;
+
+  // Esc closes any open modal FIRST — before the input-focus guard and the
+  // !currentFile guard below. Otherwise a first-timer who opened 設定/ヘルプ on the
+  // empty screen, or who just toggled a checkbox inside 設定 (focus on the input),
+  // couldn't close it with Esc and had to find ✕/背景.
+  if (e.key === 'Escape') {
+    let closed = false;
+    if (!helpModal.hidden) { helpModal.hidden = true; closed = true; }
+    if (!settingsModal.hidden) { settingsModal.hidden = true; closed = true; }
+    if (!legalModal.hidden) { legalModal.hidden = true; closed = true; }
+    if (closed) { if (tgt && typeof tgt.blur === 'function') tgt.blur(); return; }
+  }
+
   if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable)) return;
   if (!currentFile) return;
 
@@ -1296,6 +1347,9 @@ document.addEventListener('keydown', (e) => {
   } else if (ctrl && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
     e.preventDefault();
     redo(); updateUndoRedo();
+  } else if (ctrl && e.key === 'Enter') {
+    e.preventDefault();
+    if (!exporting) doExport({ xOptimize: true }); // Ctrl+Enter = X用に書き出し（主役のアクション）
   } else if (e.key.toLowerCase() === 'i' && !ctrl) {
     e.preventDefault();
     markIn();
@@ -1367,6 +1421,25 @@ defaultNormalize.addEventListener('change', () => {
 });
 normalizeAudioChk.addEventListener('change', () => {
   settings = saveSettings({ normalizeAudio: normalizeAudioChk.checked });
+});
+if (notifyOnDoneChk) notifyOnDoneChk.addEventListener('change', async () => {
+  if (notifyOnDoneChk.checked) {
+    if (!('Notification' in window)) {
+      setStatus('このブラウザはデスクトップ通知に対応していません（タブのタイトルでのお知らせは引き続き有効です）。');
+      notifyOnDoneChk.checked = false;
+      settings = saveSettings({ notifyOnDone: false });
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm === 'default') { try { perm = await Notification.requestPermission(); } catch (_) {} }
+    if (perm !== 'granted') {
+      notifyOnDoneChk.checked = false;
+      settings = saveSettings({ notifyOnDone: false });
+      setStatus('デスクトップ通知がブラウザで許可されませんでした（タブのタイトルでのお知らせは引き続き有効です）。');
+      return;
+    }
+  }
+  settings = saveSettings({ notifyOnDone: notifyOnDoneChk.checked });
 });
 formatSelect.addEventListener('change', () => {
   settings = saveSettings({ defaultFormat: formatSelect.value });

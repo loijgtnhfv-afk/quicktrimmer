@@ -10,6 +10,9 @@ export const DEFAULTS = Object.freeze({
   defaultHeight: 'original',
   defaultAspect: 'original',
   normalizeAudio: false,
+  defaultDragMode: 'cut',   // 'cut' | 'speedup' — remember the last-used left-drag tool
+  defaultDragSpeed: 2,      // 2 | 4 | 8 — remember the last-used speedup factor
+  notifyOnDone: false,      // desktop notification when an export finishes (opt-in; needs browser permission)
 });
 
 export function getSettings() {

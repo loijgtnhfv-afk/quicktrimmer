@@ -60,7 +60,7 @@
         <button id="helpBtn" class="btn btn-ghost icon-only" title="キーボードショートカット">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
-        <button id="xExportBtn" class="btn btn-x" disabled title="Xにそのまま投稿できるMP4で書き出し（H.264/AAC・再エンコードは必要なときだけ）">
+        <button id="xExportBtn" class="btn btn-x" disabled title="Xにそのまま投稿できるMP4で書き出し（H.264/AAC・再エンコードは必要なときだけ）　ショートカット: Ctrl+Enter">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
           X用に書き出し
         </button>
@@ -387,6 +387,7 @@
           <div><span class="kbd">P</span> カット後プレビュー再生 ON/OFF</div>
           <div><span class="kbd">Ctrl</span>+<span class="kbd">Z</span> 元に戻す</div>
           <div><span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">Z</span> やり直し</div>
+          <div><span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> X用に書き出し（すぐ書き出す）</div>
           <div><span class="kbd">Delete</span> 再生位置にある範囲を取り消し</div>
           <div><span class="kbd">Wheel</span> タイムラインのズーム / <span class="kbd">Shift</span>+<span class="kbd">Wheel</span> パン</div>
         </div>
@@ -447,6 +448,11 @@
               </label>
               <label class="check-row"><input type="checkbox" id="defaultNormalize" /> 音量を揃える</label>
             </div>
+          </div>
+          <div class="setting-row">
+            <label class="row-label">書き出し完了のお知らせ</label>
+            <div class="row-help">別のアプリ（ゲームなど）に切り替えていても、書き出しが終わったら気づけます。タブのタイトルは自動で点滅してお知らせします。チェックを入れると、デスクトップ通知（画面右下などに出るお知らせ）も出します（最初の1回だけブラウザの許可が必要です）。</div>
+            <label class="check-row"><input type="checkbox" id="notifyOnDoneChk" /> デスクトップ通知も出す</label>
           </div>
           <div class="setting-row">
             <button id="resetSettingsBtn" class="btn btn-ghost" style="align-self:flex-start;">設定をリセット</button>
