@@ -72,6 +72,22 @@
     </header>
 
     <main>
+      <!-- 再生できない形式のレスキュー（④）: 読み込み失敗時に表示。その場でMP4へ変換 -->
+      <section class="card rescue-banner" id="rescueBanner" hidden>
+        <svg class="rescue-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <div class="rescue-body">
+          <b class="rescue-title">このファイルはブラウザでそのまま再生できません</b>
+          <p class="rescue-desc" id="rescueDesc">OBSのMKVなど、形式によってはそのままだと読み込めません。このPCの中だけでMP4に変換すれば、続けて編集できます（アップロードはしません）。</p>
+          <p class="rescue-progress" id="rescueProgress" hidden></p>
+        </div>
+        <div class="rescue-actions">
+          <button id="rescueBtn" class="btn btn-primary" type="button">MP4に変換して読み込む</button>
+          <button id="rescueDismiss" class="btn btn-ghost" type="button">閉じる</button>
+        </div>
+      </section>
+
       <section class="card clip-tray-card" id="clipTrayCard" hidden>
         <div class="clip-tray-head">
           <div class="clip-tray-title">

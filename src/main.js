@@ -24,7 +24,7 @@ import {
   onHot,
   onSelect,
 } from './timeline.js';
-import { exportVideo, exportConcat, cancelExport, preloadFFmpeg } from './exporter.js';
+import { exportVideo, exportConcat, cancelExport, preloadFFmpeg, rescueToPlayable } from './exporter.js';
 import { detectSilences } from './silence.js';
 import { transcribe, toSRT, toVTT } from './subtitles.js';
 import { saveProject, loadProject, downloadProjectJson, parseProjectJson } from './storage.js';
@@ -49,6 +49,11 @@ const progressWrap = document.getElementById('progressWrap');
 const progressFill = document.getElementById('progressFill');
 const progressLabel = document.getElementById('progressLabel');
 const cancelExportBtn = document.getElementById('cancelExportBtn');
+const rescueBanner = document.getElementById('rescueBanner');
+const rescueBtn = document.getElementById('rescueBtn');
+const rescueDismiss = document.getElementById('rescueDismiss');
+const rescueDesc = document.getElementById('rescueDesc');
+const rescueProgress = document.getElementById('rescueProgress');
 const timelineContainer = document.getElementById('timelineContainer');
 const exportDonePanel = document.getElementById('exportDonePanel');
 const exportDoneMeta = document.getElementById('exportDoneMeta');
@@ -255,6 +260,11 @@ function probeClipMeta(clip) {
 async function handleIncomingFiles(fileList) {
   const incoming = Array.from(fileList || []).filter(isVideoFile);
   if (incoming.length === 0) { setStatus('動画ファイルを選んでください。'); return; }
+  // A fresh user-initiated load supersedes any standing rescue prompt. (Hidden here
+  // — NOT in doOpenClip — so the automatic fallback-reopen of an existing clip after
+  // a sibling fails doesn't wipe the new clip's rescue banner. If THIS load also
+  // fails, doOpenClip's catch re-shows the banner for it.)
+  hideRescueBanner();
   const wasEmpty = clips.length === 0;
   const newClips = [];
   for (const file of incoming) {
@@ -361,7 +371,10 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
   } catch (err) {
     console.error(err);
     if (err && (err.message === 'UNSUPPORTED_MEDIA' || err.message === 'LOAD_TIMEOUT')) {
-      setStatus('このファイル形式はブラウザで再生できないため読み込めませんでした（.avi や一部の .mkv など）。MP4 / WebM / MOV に変換してからお試しください。');
+      // Don't dead-end (④): offer an in-place ffmpeg.wasm conversion to a playable
+      // MP4 instead of telling the user to go convert it elsewhere.
+      setStatus('');
+      showRescueBanner(clip.file);
     } else {
       setStatus('読み込みエラー: ' + (err.message || err));
     }
@@ -469,6 +482,85 @@ if (trySampleBtn) {
     } finally {
       trySampleBtn.disabled = false;
       if (labelEl) labelEl.textContent = prev;
+    }
+  });
+}
+
+// --- Rescue: convert a browser-unplayable file to a playable MP4 in place (④) ---
+// Shown by doOpenClip's catch when the <video> can't load a clip (OBS MKV, AVI,
+// HEVC, …). Instead of dead-ending, we convert locally with ffmpeg.wasm (lossless
+// remux when only the container is the problem, transcode when the codec is) and
+// feed the result back through the normal load pipeline.
+let lastFailedFile = null;
+const rescueEta = { start: 0, startP: 0 };
+function showRescueBanner(file) {
+  lastFailedFile = file;
+  if (rescueDesc) rescueDesc.textContent = `「${file.name}」はブラウザでそのまま再生できない形式です（OBSのMKVなど）。このPCの中だけでMP4に変換すれば、続けて編集できます（アップロードはしません）。`;
+  if (rescueProgress) { rescueProgress.hidden = true; rescueProgress.textContent = ''; }
+  if (rescueBtn) { rescueBtn.disabled = false; rescueBtn.textContent = 'MP4に変換して読み込む'; }
+  if (rescueBanner) rescueBanner.hidden = false;
+}
+function hideRescueBanner() {
+  if (rescueBanner) rescueBanner.hidden = true;
+  lastFailedFile = null;
+}
+// Show a non-percentage status line in the banner (used for the probe + the remux
+// branch, which has NO progress events — a bare "0%" there would look frozen).
+function setRescueStatus(msg) {
+  if (!rescueProgress || !msg) return;
+  rescueProgress.hidden = false;
+  rescueProgress.textContent = msg;
+}
+// Percentage + ETA — only fed real (determinate) ffmpeg progress from the transcode.
+function setRescueProgress(p, info) {
+  if (!rescueProgress || !(info && info.determinate)) return;
+  rescueProgress.hidden = false;
+  const pct = Math.max(0, Math.min(100, Math.round(p * 100)));
+  const now = performance.now();
+  if (rescueEta.start === 0 || p < rescueEta.startP) { rescueEta.start = now; rescueEta.startP = p; }
+  const elapsed = (now - rescueEta.start) / 1000, prog = p - rescueEta.startP;
+  let txt = `変換中… ${pct}%`;
+  if (elapsed > 1.5 && prog > 0.01 && p > 0.02 && p < 0.995) txt += `　残り ${formatEta(elapsed * (1 - p) / prog)}`;
+  rescueProgress.textContent = txt;
+}
+if (rescueDismiss) rescueDismiss.addEventListener('click', hideRescueBanner);
+if (rescueBtn) {
+  rescueBtn.addEventListener('click', async () => {
+    if (!lastFailedFile || exporting) return;
+    const file = lastFailedFile;
+    exporting = true;
+    rescueBtn.disabled = true;
+    rescueBtn.textContent = '変換中...';
+    rescueEta.start = 0; rescueEta.startP = 0;
+    showCancelBtn(true);
+    try {
+      const { blob, method } = await rescueToPlayable(file, {
+        // Route status into the banner too: the remux branch emits no progress
+        // events, so this descriptive line (not a frozen "0%") is what the user sees.
+        onStatus: (m) => { setStatus(m); setRescueStatus(m); },
+        onProgress: (p, info) => setRescueProgress(p, info),
+      });
+      notifyExportDone('動画の変換が完了しました', '✅ 変換完了！'); // consistent with ②: a long transcode may have been backgrounded
+      const base = (file.name || 'video').replace(/\.[^.]+$/, '');
+      const mp4 = new File([blob], `${base}.mp4`, { type: 'video/mp4' });
+      hideRescueBanner();
+      showCancelBtn(false);
+      exporting = false; // release before the normal load pipeline takes over
+      setStatus(method === 'remux' ? 'MP4に変換しました（画質そのまま）。読み込みます…' : 'MP4に変換しました。読み込みます…');
+      await handleIncomingFiles([mp4]);
+    } catch (err) {
+      console.error('[rescue] error:', err);
+      exporting = false;
+      showCancelBtn(false);
+      if (err && err.message && err.message.includes('__CANCELLED__')) {
+        setStatus('変換をキャンセルしました');
+        if (rescueProgress) rescueProgress.hidden = true;
+      } else {
+        setStatus('変換に失敗しました: ' + (err.message || err));
+        if (rescueProgress) { rescueProgress.hidden = false; rescueProgress.textContent = '変換に失敗しました。別の形式でお試しください。'; }
+      }
+      rescueBtn.disabled = false;
+      rescueBtn.textContent = 'MP4に変換して読み込む';
     }
   });
 }
@@ -945,9 +1037,9 @@ function restoreTitle() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) restoreTitle(); });
 window.addEventListener('focus', restoreTitle);
 
-function notifyExportDone(message) {
+function notifyExportDone(message, flashText = '✅ 書き出し完了！') {
   if (!document.hidden) return; // looking at the tab — the on-screen panel is enough
-  flashTitle('✅ 書き出し完了！');
+  flashTitle(flashText);
   if (settings.notifyOnDone && 'Notification' in window && Notification.permission === 'granted') {
     try {
       const n = new Notification('QuickTrimmer', { body: message, icon: '/icons/icon.svg' });

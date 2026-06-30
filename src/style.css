@@ -296,6 +296,20 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 }
 .es-privacy svg { color: var(--positive); flex-shrink: 0; } /* セージの鍵 */
 
+/* Rescue banner (④): browser-unplayable file → convert to MP4 in place */
+.rescue-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; background: var(--warning-soft); border: 1px solid var(--warning); }
+.rescue-icon { color: var(--warning); flex-shrink: 0; margin-top: 1px; }
+.rescue-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rescue-title { font-size: 14px; font-weight: 700; color: var(--text-strong); }
+.rescue-desc { font-size: 12.5px; line-height: 1.6; color: var(--text-muted); }
+.rescue-progress { font-size: 12.5px; font-weight: 700; color: var(--text); margin-top: 4px; }
+.rescue-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; align-self: center; }
+@media (max-width: 640px) {
+  .rescue-banner { flex-wrap: wrap; }
+  .rescue-actions { flex-direction: row; width: 100%; }
+  .rescue-actions .btn { flex: 1; }
+}
+
 /* Timeline */
 .timeline-card { padding: 11px 16px 12px; }
 

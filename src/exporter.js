@@ -549,6 +549,96 @@ export async function exportVideo(file, ranges, duration, options = {}) {
   }
 }
 
+// ---------- Rescue: convert a browser-unplayable file into an editable MP4 ----------
+// A clip can fail to load in the <video> element for two distinct reasons:
+//   (1) a CONTAINER the browser can't demux (MKV / AVI) but whose codecs it COULD
+//       decode (H.264 + AAC, the common OBS-MKV case) → a fast, LOSSLESS remux to
+//       MP4 (-c copy) makes it playable with zero quality loss.
+//   (2) a CODEC the browser can't decode (HEVC / AV1 / DivX-Xvid, etc.) → TRANSCODE
+//       to H.264/AAC MP4 so the editor's <video> can scrub/preview/decode-waveform it.
+// 100% local, same as every other path. Returns { blob, method:'remux'|'transcode',
+// fromCodec }. Honors cancelExport() via the shared cancelRequested/terminate path.
+export async function rescueToPlayable(file, options = {}) {
+  const status = options.onStatus || (() => {});
+  const onProgress = options.onProgress || (() => {});
+  cancelRequested = false;
+  logBuffer = [];
+  status('変換の準備をしています…');
+  onProgress(0);
+
+  let ff;
+  try { ff = await getFFmpeg(); }
+  catch (err) { throw new Error('FFmpeg の読み込みに失敗: ' + (err.message || err)); }
+
+  const dir = '/rescue';
+  try {
+    const ext = getExt(file.name);
+    const inputName = await mountInput(ff, dir, 'input' + ext, file);
+    throwIfCancelled();
+
+    status('ファイルの形式を確認しています…');
+    const { videoCodec, audioCodec } = await probeInput(ff, inputName);
+    throwIfCancelled();
+
+    // Codecs the browser <video> can actually decode inside an MP4 container.
+    const videoPlayable = videoCodec === 'h264' || videoCodec === 'avc' || videoCodec === 'avc1';
+    const audioPlayable = audioCodec === null || audioCodec === 'aac' || audioCodec === 'mp3';
+
+    let method = null;
+    if (videoPlayable && audioPlayable) {
+      // Container-only problem (e.g. OBS MKV with H.264/AAC): remux losslessly.
+      status('MP4に変換しています（画質そのまま・このPCの中だけで処理）…');
+      const code = await ff.exec([
+        '-i', inputName,
+        // First video + first audio only, matching the transcode branch and the
+        // editor's single-track model (avoids a rescued file with extra audio
+        // tracks that a remux→transcode fallback would then silently drop).
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        '-y', 'rescued.mp4',
+      ]);
+      if (code === 0) method = 'remux';
+      else { console.warn('[rescue] remux failed, falling back to transcode'); throwIfCancelled(); }
+    }
+
+    if (method !== 'remux') {
+      method = 'transcode';
+      status('再生できる形式に変換しています（再エンコード・このPCの中だけで処理）…');
+      const includeAudio = audioCodec !== null;
+      const args = ['-i', inputName, '-map', '0:v:0'];
+      if (includeAudio) args.push('-map', '0:a:0?');
+      args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-crf', '23');
+      if (includeAudio) args.push('-c:a', 'aac', '-b:a', '128k');
+      args.push('-movflags', '+faststart', '-y', 'rescued.mp4');
+      // Real ffmpeg progress → determinate:true so the UI shows a trustworthy ETA.
+      const progressHandler = ({ progress }) => {
+        if (typeof progress === 'number' && progress >= 0) onProgress(Math.max(0, Math.min(1, progress)), { determinate: true });
+      };
+      ff.on('progress', progressHandler);
+      let code;
+      try { code = await ff.exec(args); }
+      finally { try { ff.off('progress', progressHandler); } catch (_) {} }
+      if (code !== 0) throw new Error(`変換に失敗 (exit ${code})`);
+    }
+
+    const data = await ff.readFile('rescued.mp4');
+    try { await ff.deleteFile('rescued.mp4'); } catch (_) {}
+    onProgress(1);
+    status('');
+    return { blob: new Blob([data.buffer], { type: 'video/mp4' }), method, fromCodec: videoCodec };
+  } catch (err) {
+    const msg = (err && err.message) ? err.message : String(err);
+    if (cancelRequested || msg.includes('__CANCELLED__') || msg.includes('called FFmpeg.terminate()')) {
+      cancelRequested = false;
+      throw new Error('__CANCELLED__');
+    }
+    throw err;
+  } finally {
+    await unmountInput(ff, dir);
+  }
+}
+
 // ---------- Multi-clip concat ("highlights") export ----------
 // Combine several clips — each already middle-cut / sped-up with its own ranges —
 // into ONE X-uploadable MP4. Cross-clip stream-copy is impossible (clips differ in
