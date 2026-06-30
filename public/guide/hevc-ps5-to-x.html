@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HEVC・PS5のクリップがXに上げられないとき — QuickTrimmer</title>
+  <meta name="description" content="Steam（HEVC）やPS5（VP9/Opus）のクリップは、見た目はmp4でもXに弾かれがち。QuickTrimmer は中身のコーデックを実際に調べ、必要なときだけX対応（H.264/AAC）に自動変換します。アップロード不要・無料。" />
+  <link rel="canonical" href="https://quicktrimmer.vercel.app/guide/hevc-ps5-to-x.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="HEVC・PS5のクリップがXに上げられないとき" />
+  <meta property="og:description" content="見た目はmp4でもXに弾かれるクリップを、必要なときだけ自動でX対応に変換。" />
+  <meta property="og:url" content="https://quicktrimmer.vercel.app/guide/hevc-ps5-to-x.html" />
+  <meta property="og:image" content="https://quicktrimmer.vercel.app/og-image.png" />
+  <meta name="theme-color" content="#C15F3C" />
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+  <link rel="stylesheet" href="/guide/guide.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="brand" href="/">
+        <svg class="logo" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+        <span class="name">QuickTrimmer</span>
+      </a>
+      <span class="spacer"></span>
+      <a class="open-app" href="/">アプリを開く</a>
+    </header>
+    <nav class="crumbs"><a href="/guide/">使い方ガイド</a> › HEVC・PS5のクリップがXに上げられないとき</nav>
+
+    <h1>HEVC・PS5のクリップが<br>Xに上げられないとき</h1>
+    <p class="lead">「拡張子は .mp4 なのに、Xに上げようとすると弾かれる／真っ黒になる」。これは中身の“コーデック”がXに対応していないのが原因です。QuickTrimmer は中身を実際に調べて、必要なときだけX対応に直してくれます。</p>
+
+    <h2>なぜ弾かれるの？</h2>
+    <p>動画ファイルは「入れ物（拡張子）」と「中身（コーデック）」が別です。Xが受け付ける中身は基本的に <strong>H.264（動画）＋AAC（音声）</strong> ですが、次のようなクリップは拡張子が .mp4 や .webm でも中身が違います。</p>
+    <ul>
+      <li><strong>Steam の録画</strong> … HEVC（H.265）を .mp4 に入れていることが多い</li>
+      <li><strong>PS5 のクリップ</strong> … VP9 / Opus を .webm に入れていることがある</li>
+      <li>スマホやキャプチャ機器の一部 … HEVC など</li>
+    </ul>
+    <p>これらは見た目では分からず、Xに上げて初めて「処理できませんでした」と気づくことが多いです。</p>
+
+    <h2>QuickTrimmer での直し方</h2>
+    <p>特別な操作はいりません。<strong>いつも通りカットして「X用に書き出し」を押すだけ</strong>です。</p>
+    <ol class="steps">
+      <li><span class="st">クリップを読み込む</span><a href="/">QuickTrimmer</a> にドラッグ＆ドロップ。</li>
+      <li><span class="st">いらない所をカット</span>必要なら中間部分をドラッグで消します（カットだけなら画質はそのまま）。</li>
+      <li><span class="st">X用に書き出し</span>書き出し時に中身のコーデックを自動でチェックします。<strong>すでにX対応（H.264/AAC）ならそのままコピー（無劣化・一瞬）</strong>。HEVCやPS5のような非対応のときだけ、<strong>自動でH.264/AACに変換</strong>してX対応MP4にします。</li>
+    </ol>
+
+    <div class="note"><b>つまり：</b>「対応している動画は無劣化のまま速く、対応していない動画だけ自動で変換」。どちらの場合も、最後はXにそのまま上げられるMP4（ファイル名末尾 <code>_for_X.mp4</code>）がPCに保存されます。</div>
+
+    <div class="note warn"><b>変換（再エンコード）には少し時間がかかります。</b>長いクリップや4Kだと数十秒かかることがあります。進捗バーに「残り 約◯秒」と表示されるので、終わるまで待ってください（別のアプリに切り替えても、設定で通知をオンにしておけば完了を知らせます）。</div>
+
+    <h2>画質はどうなる？</h2>
+    <p>変換が必要なときは1回だけ再エンコードが入るので、厳密にはわずかに変化します。ただしXは投稿時に必ずサーバー側で再エンコードするため、ここでX向けに最適化（H.264・適切なビットレート）しておくほうが、結果的にきれいに見えやすいです。</p>
+
+    <p><a class="cta" href="/">QuickTrimmer を開いて試す</a></p>
+
+    <footer class="site">
+      <a href="/guide/">使い方ガイド</a>
+      <a href="/">QuickTrimmer を開く</a>
+      <a href="https://x.com/sanuntea" target="_blank" rel="noopener noreferrer">お問い合わせ（X）</a>
+    </footer>
+  </div>
+</body>
+</html>

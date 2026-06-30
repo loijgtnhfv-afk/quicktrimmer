@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBSのMKVが読み込めない・再生できないとき — QuickTrimmer</title>
+  <meta name="description" content="OBSのMKVや古いAVIなど、ブラウザでそのまま再生できない動画でも大丈夫。QuickTrimmer はその場でMP4に変換して、そのまま編集を続けられます。アップロード不要・無料・ブラウザだけ。" />
+  <link rel="canonical" href="https://quicktrimmer.vercel.app/guide/mkv-not-playing.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="OBSのMKVが読み込めない・再生できないとき" />
+  <meta property="og:description" content="ブラウザで再生できない動画も、その場でMP4に変換して編集を続けられます。" />
+  <meta property="og:url" content="https://quicktrimmer.vercel.app/guide/mkv-not-playing.html" />
+  <meta property="og:image" content="https://quicktrimmer.vercel.app/og-image.png" />
+  <meta name="theme-color" content="#C15F3C" />
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+  <link rel="stylesheet" href="/guide/guide.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="brand" href="/">
+        <svg class="logo" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+        <span class="name">QuickTrimmer</span>
+      </a>
+      <span class="spacer"></span>
+      <a class="open-app" href="/">アプリを開く</a>
+    </header>
+    <nav class="crumbs"><a href="/guide/">使い方ガイド</a> › OBSのMKVが読み込めないとき</nav>
+
+    <h1>OBSのMKVが読み込めない・<br>再生できないとき</h1>
+    <p class="lead">OBSの録画（.mkv）や古い .avi などは、ブラウザがそのまま再生できないことがあります。QuickTrimmer なら、そこで行き止まりにならず、<strong>その場でMP4に変換して編集を続けられます</strong>。もちろんアップロードはしません。</p>
+
+    <h2>なぜ読み込めないことがある？</h2>
+    <p>ブラウザは「入れ物（コンテナ）」の種類によっては再生できません。代表例が <strong>.mkv（OBSの既定）</strong> や <strong>.avi</strong> です。中身の映像（H.264など）はブラウザで見られても、入れ物が対応外だと「再生できない」と出てしまいます。また、中身がHEVCなど対応外コーデックのこともあります。</p>
+
+    <h2>その場で変換して続ける</h2>
+    <p>読み込めない動画を入れると、画面の上に案内が出ます。</p>
+    <ol class="steps">
+      <li><span class="st">「MP4に変換して読み込む」を押す</span>読み込めなかったとき表示されるボタンです。押すと、このPCの中（ブラウザ内）でMP4に変換します。</li>
+      <li><span class="st">変換のしかたは自動で最適化</span>中身がすでにブラウザで扱える形式（H.264/AACをMKVに入れただけ等）なら、<strong>画質そのままで一瞬（無劣化のコピー）</strong>。そうでなければ、再生できる形（H.264）に変換します（こちらは少し時間がかかり、進捗と残り時間が出ます）。</li>
+      <li><span class="st">そのまま編集</span>変換が終わると自動で読み込まれ、いつも通り中間カット → X用に書き出し、と続けられます。</li>
+    </ol>
+
+    <div class="note"><b>アップロードはしません。</b>変換もカットも書き出しも、すべてあなたのPCの中だけで行われます。</div>
+
+    <h2>そもそも読み込めない形式を減らすには（OBSの設定）</h2>
+    <p>OBSなら、録画の設定を少し変えると最初からブラウザ対応にできます。</p>
+    <ul>
+      <li>「設定 → 出力 → 録画」で、<strong>録画フォーマットを mp4（または mov）</strong>にする。</li>
+      <li>映像エンコーダは <strong>H.264</strong> を選ぶと、いちばん相性が良いです。</li>
+      <li>「録画は mkv、あとで mp4 へ自動リマックス」という運用でもOK。QuickTrimmer ならその mkv もそのまま変換できます。</li>
+    </ul>
+
+    <p><a class="cta" href="/">QuickTrimmer を開いて試す</a></p>
+
+    <footer class="site">
+      <a href="/guide/">使い方ガイド</a>
+      <a href="/">QuickTrimmer を開く</a>
+      <a href="https://x.com/sanuntea" target="_blank" rel="noopener noreferrer">お問い合わせ（X）</a>
+    </footer>
+  </div>
+</body>
+</html>

@@ -23,11 +23,36 @@
     <meta name="twitter:description" content="ゲームのクリップをドラッグで中間カット → Xにそのまま。再エンコードなし・アップロード不要・無料。" />
     <meta name="twitter:image" content="https://quicktrimmer.vercel.app/og-image.png" />
 
+    <link rel="canonical" href="https://quicktrimmer.vercel.app/" />
+
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#C15F3C" />
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
     <link rel="stylesheet" href="/src/style.css" />
+
+    <!-- 構造化データ：無料・ブラウザ完結の動画ツールであることを検索エンジンに伝える -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "QuickTrimmer",
+      "url": "https://quicktrimmer.vercel.app/",
+      "description": "ゲームのクリップをブラウザだけで中間カットし、Xにそのまま投稿できるMP4に書き出す無料ツール。アップロード不要、すべてこのPCの中で処理。HEVCやPS5のクリップも自動でX対応に変換。",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Web（Chrome / Edge などのブラウザ）",
+      "inLanguage": "ja",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "JPY" },
+      "featureList": [
+        "波形タイムライン上でドラッグして中間カット",
+        "X用に書き出し（H.264/AAC・必要なときだけ自動変換）",
+        "複数クリップを1本に結合（ハイライト）",
+        "クリップを1本ずつ別々のMP4に書き出し",
+        "再生できない動画（OBSのMKVなど）をその場でMP4に変換",
+        "アップロード不要・すべてブラウザ内で処理"
+      ]
+    }
+    </script>
   </head>
   <body>
     <header>
@@ -386,6 +411,7 @@
     <footer class="site-footer">
       <span class="footer-copy">© 2026 ぬんざわ · QuickTrimmer</span>
       <nav class="footer-links">
+        <a class="footer-link" href="/guide/">使い方ガイド</a>
         <button type="button" class="footer-link" id="legalBtn">プライバシー・利用規約</button>
         <a class="footer-link" href="https://x.com/sanuntea" target="_blank" rel="noopener noreferrer">お問い合わせ（X）</a>
       </nav>
