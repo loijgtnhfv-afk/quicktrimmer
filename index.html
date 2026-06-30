@@ -105,7 +105,11 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
             つなげて書き出し（X用）
           </button>
-          <span id="combineHint" class="combine-hint" hidden>※ つなげるときは1本の動画にまとめ直すので、書き出しに少し時間がかかります</span>
+          <button id="exportEachBtn" class="btn btn-ghost" type="button" hidden title="クリップを1本ずつ、別々のX用MP4として順番に書き出します（つなげません）">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><polyline points="14 18 16.5 20.5 21 15"/></svg>
+            1本ずつ書き出し（X用）
+          </button>
+          <span id="combineHint" class="combine-hint" hidden>※「つなげて」＝全部を1本の動画に。「1本ずつ」＝クリップごとに別々のMP4で書き出します</span>
         </div>
         <div id="combineBadge" class="x-limit" hidden></div>
       </section>

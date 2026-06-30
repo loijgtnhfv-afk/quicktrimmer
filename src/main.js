@@ -93,6 +93,7 @@ const clipTrayList = document.getElementById('clipTrayList');
 const addClipBtn = document.getElementById('addClipBtn');
 const clearClipsBtn = document.getElementById('clearClipsBtn');
 const combineBtn = document.getElementById('combineBtn');
+const exportEachBtn = document.getElementById('exportEachBtn');
 const combineHint = document.getElementById('combineHint');
 const combineBadge = document.getElementById('combineBadge');
 
@@ -439,6 +440,7 @@ function resetToEmpty() {
   playerCard.classList.add('empty');
   resetSubtitlePanel();
   hideExportDone();
+  clearBatchUrls();
   updateXLimit();
   renderClipTray();
   updateCombinedUI();
@@ -1325,6 +1327,7 @@ function updateCombinedUI() {
   if (!combineBtn) return;
   const multi = clips.length >= 2;
   combineBtn.hidden = !multi;
+  if (exportEachBtn) { exportEachBtn.hidden = !multi; exportEachBtn.disabled = exporting || !multi; }
   if (combineHint) combineHint.hidden = !multi;
   if (combineBadge) combineBadge.hidden = !multi;
   combineBtn.disabled = exporting || !multi;
@@ -1354,6 +1357,7 @@ function updateCombinedBadge() {
 
 async function doCombinedExport() {
   if (clips.length < 2 || exporting) return;
+  exporting = true; // claim immediately so the metadata-probe await below can't be re-entered
   const ac = activeClip();
   if (ac) ac.ranges = getRanges(); // commit the active clip's in-progress edits
 
@@ -1370,10 +1374,10 @@ async function doCombinedExport() {
   const unmeasurable = clips.filter((c) => !(c.duration > 0));
   if (unmeasurable.length) {
     setStatus('次のクリップの長さを取得できませんでした（壊れている可能性）: ' + unmeasurable.map((c) => c.name).join('、'));
+    exporting = false; updateCombinedUI(); // release the claim taken above
     return;
   }
 
-  exporting = true;
   exportBtn.disabled = true;
   xExportBtn.disabled = true;
   combineBtn.disabled = true;
@@ -1422,12 +1426,81 @@ async function doCombinedExport() {
   }
 }
 
+// --- "1本ずつ書き出し（X用）" — batch each clip to its OWN X-ready MP4 (⑥) ---
+// Unlike combine (all clips → one video), this exports N separate files. Sequential
+// (one ffmpeg at a time); the shared bar + status show the current clip's real
+// per-clip progress/ETA, the count ("N/M本目") shows overall position. Each result
+// downloads as it finishes. A per-clip failure is recorded and the batch continues;
+// a cancel stops the run. URLs are kept alive (revoked on the next batch / reset) so
+// a missed download isn't lost to a premature revoke.
+let batchUrls = [];
+function clearBatchUrls() { for (const u of batchUrls) { try { URL.revokeObjectURL(u); } catch (_) {} } batchUrls = []; }
+
+async function doExportEach() {
+  if (clips.length < 2 || exporting) return;
+  exporting = true; // claim BEFORE the metadata-probe await so it can't be re-entered
+  exportBtn.disabled = true; xExportBtn.disabled = true; combineBtn.disabled = true;
+  if (exportEachBtn) exportEachBtn.disabled = true;
+  const originalHTML = exportEachBtn ? exportEachBtn.innerHTML : '';
+  try {
+    const ac = activeClip();
+    if (ac) ac.ranges = getRanges(); // commit the active clip's in-progress edits
+    const needMeta = clips.filter((c) => !(c.duration > 0));
+    if (needMeta.length) { setStatus('クリップ情報を確認中...'); await Promise.all(needMeta.map(probeClipMeta)); }
+
+    hideExportDone();
+    clearBatchUrls();
+    if (exportEachBtn) exportEachBtn.textContent = '処理中...';
+    showProgress(true); showCancelBtn(true);
+    const M = clips.length;
+    let okCount = 0; const failed = []; let cancelled = false;
+    for (let i = 0; i < clips.length; i++) {
+      const clip = clips[i];
+      setStatus(`${i + 1}/${M}本目を書き出し中…`);
+      try {
+        const blob = await exportVideo(clip.file, clip.ranges || [], clip.duration, {
+          xOptimize: true,
+          hasAudio: clip.hasAudio !== false,
+          aspect: aspectSelect.value,
+          onStatus: (m) => setStatus(`${i + 1}/${M}本目: ${m}`),
+          onProgress: (p, info) => setProgress(p, info),
+        });
+        const url = URL.createObjectURL(blob); batchUrls.push(url);
+        const base = (clip.name || `clip${i + 1}`).replace(/\.[^.]+$/, '');
+        triggerDownload(url, `${base}_for_X.mp4`);
+        okCount++;
+      } catch (err) {
+        if (err && err.message && err.message.includes('__CANCELLED__')) { cancelled = true; break; }
+        console.error(`[exportEach] clip ${i + 1} failed:`, err);
+        failed.push(clip.name || `${i + 1}本目`);
+      }
+    }
+    setProgress(1);
+    if (cancelled) {
+      setStatus(`書き出しをキャンセルしました（${okCount}/${M}本まで完了）`);
+    } else if (failed.length) {
+      setStatus(`${okCount}/${M}本を書き出しました。失敗: ${failed.join('、')}`);
+    } else {
+      setStatus(`${M}本すべてX用に書き出しました！ダウンロードを確認してください。`);
+      notifyExportDone(`${M}本の書き出しが完了しました`);
+    }
+    setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
+  } finally {
+    exporting = false;
+    exportBtn.disabled = cutRanges.length === 0;
+    xExportBtn.disabled = !currentFile;
+    if (exportEachBtn) exportEachBtn.innerHTML = originalHTML;
+    updateCombinedUI();
+  }
+}
+
 if (addClipBtn) addClipBtn.addEventListener('click', () => fileInput.click());
 if (clearClipsBtn) clearClipsBtn.addEventListener('click', () => {
   if (clips.length === 0 || exporting) return;
   if (confirm('読み込んだクリップを全部外しますか？（カット内容は消えます）')) clearAllClips();
 });
 if (combineBtn) combineBtn.addEventListener('click', doCombinedExport);
+if (exportEachBtn) exportEachBtn.addEventListener('click', doExportEach);
 
 // --- Keyboard shortcuts ---
 document.addEventListener('keydown', (e) => {
