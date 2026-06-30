@@ -415,6 +415,36 @@ fileInput.addEventListener('change', async (e) => {
   e.target.value = ''; // allow re-selecting the same file(s)
 });
 
+// Empty-state "サンプルで試す": fetch the bundled rights-free clip, wrap it as a
+// File and push it through the SAME load pipeline as drop/picker. The button is
+// ALWAYS restored in finally: on success #emptyState is hidden (doOpenClip removes
+// .empty from #playerCard), but the user can later 全部クリア / remove the last clip
+// → resetToEmpty() shows the empty state again — without the restore the button
+// would reappear stuck disabled with the 読み込み中… label.
+const trySampleBtn = document.getElementById('trySampleBtn');
+if (trySampleBtn) {
+  trySampleBtn.addEventListener('click', async () => {
+    if (trySampleBtn.disabled) return;
+    const labelEl = trySampleBtn.querySelector('.es-cta-sample-label');
+    const prev = labelEl ? labelEl.textContent : '';
+    trySampleBtn.disabled = true;
+    if (labelEl) labelEl.textContent = '読み込み中…';
+    try {
+      const res = await fetch('/sample/sample-clip.mp4');
+      if (!res.ok) throw new Error('sample fetch failed: ' + res.status);
+      const blob = await res.blob();
+      const file = new File([blob], 'sample-clip.mp4', { type: 'video/mp4' });
+      await handleIncomingFiles([file]); // same path as drop / picker — one load pipeline
+    } catch (err) {
+      console.error(err);
+      setStatus('サンプルの読み込みに失敗しました。少し待ってからもう一度お試しください。');
+    } finally {
+      trySampleBtn.disabled = false;
+      if (labelEl) labelEl.textContent = prev;
+    }
+  });
+}
+
 let dragCounter = 0;
 window.addEventListener('dragenter', (e) => {
   if (!hasFiles(e)) return;

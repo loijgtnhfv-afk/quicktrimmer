@@ -98,12 +98,75 @@
         <div class="player-stage">
           <video id="player" controls></video>
           <div id="emptyState">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="2" y="6" width="14" height="12" rx="2"/>
-              <polygon points="22 8 16 12 22 16 22 8"/>
-            </svg>
-            <h2>動画をここにドロップ</h2>
-            <p>または「動画を選択」ボタンから読み込み<br>※ ファイルはこのPCの中だけで処理されます（アップロードなし）</p>
+            <!-- A. ヒーロー：ようこそ＋コア体験の説明＋2つの入口 -->
+            <div class="es-hero">
+              <svg class="es-hero-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="6" width="14" height="12" rx="2"/>
+                <polygon points="22 8 16 12 22 16 22 8"/>
+              </svg>
+              <h2>はじめてでも、3ステップでXに上げられる動画に</h2>
+              <p class="es-hero-sub">録画したゲームのクリップを、ここにドラッグ＆ドロップ<br>（ShadowPlay / Xbox Game Bar / PS5 などに対応）</p>
+
+              <div class="es-cta">
+                <!-- ヘッダーの隠し #fileInput を for= で再利用（新しい input も新しいJSも不要。
+                     既存の change → handleIncomingFiles ハンドラがそのまま発火する）。 -->
+                <label class="btn btn-primary es-cta-pick" for="fileInput">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  動画を選ぶ
+                </label>
+                <!-- main.js が #trySampleBtn を配線：fetch /sample/sample-clip.mp4 → File → handleIncomingFiles([file])。
+                     ラベルを SVG と別 span にして、JS が読み込み中…に差し替えてもアイコンが消えないようにしている。 -->
+                <button id="trySampleBtn" class="btn es-cta-sample" type="button" title="同梱の権利フリーなサンプルクリップで操作をひと通り試す">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                  <span class="es-cta-sample-label">サンプルで試す</span>
+                </button>
+              </div>
+              <p class="es-cta-samplesub">ゲーム風の短いクリップで、塗って消す→書き出しまでをひと通り試せます</p>
+            </div>
+
+            <!-- B. 3ステップ：番号付き（順番にやる）＋ 各操作を表すアイコン -->
+            <ol class="es-steps" aria-label="使い方 3ステップ">
+              <li class="es-step">
+                <span class="es-step-num">1</span>
+                <svg class="es-step-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M17 2l-5 5-5-5"/>
+                </svg>
+                <span class="es-step-body">
+                  <b class="es-step-title">クリップを入れる</b>
+                  <span class="es-step-desc">ここにドラッグ＆ドロップ、または「動画を選ぶ」から読み込み</span>
+                </span>
+              </li>
+              <li class="es-step">
+                <span class="es-step-num">2</span>
+                <!-- 実際の操作のプレビュー：タイムラインの帯に塗った区間＋再生位置の線 -->
+                <svg class="es-step-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="9" width="20" height="6" rx="1.5"/>
+                  <rect x="9" y="9.6" width="6" height="4.8" rx="0.5" fill="currentColor" stroke="none"/>
+                  <line x1="12" y1="5.5" x2="12" y2="18.5"/>
+                </svg>
+                <span class="es-step-body">
+                  <b class="es-step-title">いらない所を塗る</b>
+                  <span class="es-step-desc">下の帯（タイムライン）を、消したい場面でなぞるだけ。塗った所が消えて、残りが自動で1本につながります</span>
+                </span>
+              </li>
+              <li class="es-step">
+                <span class="es-step-num">3</span>
+                <!-- トレイに入る下向き矢印（Xの鳥ではない）＝「このPCに保存される」ことを正直に示す -->
+                <svg class="es-step-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="8 11 12 15 16 11"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span class="es-step-body">
+                  <b class="es-step-title">X用に書き出す</b>
+                  <span class="es-step-desc">ボタン1つで、Xに上げられるMP4がこのPCに保存されます。あとはXの投稿画面でその動画を選ぶだけ（自動投稿はしません）</span>
+                </span>
+              </li>
+            </ol>
+
+            <!-- C. プライバシー：最大の差別化点。文言は変えずにセージ色のピルで -->
+            <p class="es-privacy">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              ファイルはこのPCの中だけで処理されます（アップロードなし）
+            </p>
           </div>
         </div>
         <div class="player-controls" id="playerControls">

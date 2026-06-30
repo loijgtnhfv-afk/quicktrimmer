@@ -236,11 +236,65 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 
 #player { width: 100%; max-height: 40vh; display: block; background: #0E0E0E; }
 .player-card.empty #player { display: none; }
-#emptyState { display: none; text-align: center; color: #999; padding: 60px 24px; }
-.player-card.empty #emptyState { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-#emptyState svg { color: #555; margin-bottom: 4px; }
-#emptyState h2 { font-size: 17px; font-weight: 600; color: #BBB; }
-#emptyState p { font-size: 13px; color: #777; line-height: 1.7; }
+/* ===== 空状態オンボーディング（暗い #0E0E0E のプレイヤーステージ上に表示） =====
+   ダークを維持：ステージ＝動画の表示面なので、クリップ読込で .empty が外れた瞬間に
+   色のチラつきがゼロ。テラコッタも near-black 上でより映える。トレードオフとして
+   クリーム用に調整した文字色変数（--text-muted #7D7B70 等）は #0E0E0E 上で AA を
+   割るため、以下の文字色は意図的に明るく上書きしている。 */
+
+/* 重要な修正：ベースの .player-stage は overflow:hidden + align-items:center（動画の
+   レターボックス用）。そのままだと背の高いガイドがクリップされる。空状態のときだけ
+   上書きし、非空状態のステージ規則はそのまま（読み込んだ動画は引き続き中央配置）。 */
+.player-card.empty .player-stage { overflow: auto; align-items: flex-start; }
+
+#emptyState { display: none; }
+.player-card.empty #emptyState {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 22px; width: 100%; max-width: 620px; margin: 0 auto;
+  padding: 40px 24px; text-align: center;
+}
+
+/* A. ヒーロー */
+.es-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+.es-hero-icon { color: rgba(255,255,255,0.28); } /* 装飾・控えめに */
+#emptyState h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.2px; color: #F1EFE8; } /* ~16:1 */
+.es-hero-sub { font-size: 12.5px; line-height: 1.7; color: #9C988D; } /* ~6:1, AA */
+
+.es-cta { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+.es-cta .btn { padding: 10px 18px; }
+/* .es-cta-pick は .btn .btn-primary をそのまま使用（テラコッタ＋#fff）＝上書き不要。 */
+/* サンプル＝ブランド寄りだが二次的な「ダーク上のゴースト」。.btn-ghost は不可：その背景
+   var(--surface)=#FFFFFF が黒地で白い板になる。薄いテラコッタ枠＋テラコッタアイコンで
+   「試してみて」を示しつつ、明確に二次ボタンに留める。 */
+.es-cta-sample { background: rgba(255,255,255,0.05); border: 1px solid rgba(193,95,60,0.45); color: #ECEAE3; box-shadow: none; }
+.es-cta-sample svg { color: var(--accent); }
+.es-cta-sample:hover:not(:disabled) { background: rgba(193,95,60,0.12); border-color: var(--accent); }
+.es-cta-sample:disabled { opacity: 0.6; cursor: progress; }
+.es-cta-samplesub { font-size: 11.5px; line-height: 1.5; color: #8E8A7F; max-width: 360px; } /* ~5.4:1, AA */
+
+/* B. 3ステップ行 — ヘアライン1本でヒーローと分け、ごちゃつかないように */
+.es-steps {
+  list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  width: 100%; padding-top: 22px; border-top: 1px solid rgba(255,255,255,0.08);
+}
+.es-step { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.es-step-num { /* 既存の .clip-num バッジに合わせた見た目 */
+  width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+  background: var(--accent); color: #fff; flex-shrink: 0;
+}
+.es-step-ico { width: 26px; height: 26px; color: var(--accent); } /* テラコッタのストロークは near-black 上でクリーンに読める（アイコンには十分） */
+.es-step-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.es-step-title { font-size: 14px; font-weight: 700; color: #ECEAE3; } /* ~15:1 */
+.es-step-desc { font-size: 12px; line-height: 1.65; color: #A19D92; } /* ~6.5:1, AA */
+
+/* C. プライバシーピル — セージの色味＝「安全 / ローカル」、最大の差別化点 */
+.es-privacy {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: 999px;
+  background: rgba(107,142,90,0.14); color: #B7C7AA; font-size: 12px; font-weight: 600;
+}
+.es-privacy svg { color: var(--positive); flex-shrink: 0; } /* セージの鍵 */
 
 /* Timeline */
 .timeline-card { padding: 11px 16px 12px; }
@@ -749,4 +803,15 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
   .pc-mark { margin-left: 0; width: 100%; }
   .pc-btn { font-size: 12px; padding: 7px 9px; }
   .pc-kbd { display: none; } /* touch / narrow screens have no keyboard — drop the hints to save width */
+  /* 空状態オンボーディングのモバイル調整 */
+  .player-card.empty #emptyState { padding: 28px 16px; gap: 18px; }
+  .es-hero-sub br { display: none; } /* 狭い幅では自然に折り返す */
+  .es-cta { flex-direction: column; width: 100%; }
+  .es-cta .btn { width: 100%; } /* グローバルの .btn{flex:1} を上書きして全幅のタップ領域に */
+  .es-steps { grid-template-columns: 1fr; gap: 14px; padding-top: 16px; text-align: left; }
+  .es-step { flex-direction: row; align-items: flex-start; gap: 12px; }
+  .es-step-ico { display: none; } /* アイコンは装飾なので、番号＋テキストを1行に整える */
+  .es-step-body { flex: 1; }
+  .es-step-title { font-size: 13.5px; }
+  .es-step-desc { font-size: 12.5px; }
 }
