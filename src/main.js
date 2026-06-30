@@ -183,14 +183,40 @@ function applySettingsToUI() {
 applySettingsToUI();
 
 // --- Progress UI ---
-function setProgress(value) {
+// Honest progress + ETA (①). ffmpeg's real re-encode progress arrives with
+// {determinate:true}; the fast stream-copy path reports coarse synthetic steps with
+// no flag. We only show a "残り 約NN秒" estimate during the determinate (slow)
+// phase, where the rate is time-proportional and an ETA is trustworthy — never on
+// the jumpy copy steps, which would otherwise read as a frozen/garbage countdown.
+let etaStart = 0;   // performance.now() when the current determinate run began
+let etaStartP = 0;  // progress value at etaStart
+function resetEta() { etaStart = 0; etaStartP = 0; }
+function formatEta(sec) {
+  sec = Math.max(1, Math.round(sec));
+  if (sec < 60) return `約${sec}秒`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `約${m}分${String(s).padStart(2, '0')}秒`;
+}
+function setProgress(value, info) {
   const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
   progressFill.style.width = pct + '%';
-  progressLabel.textContent = pct + '%';
+  let label = pct + '%';
+  if (info && info.determinate) {
+    const now = performance.now();
+    if (etaStart === 0 || value < etaStartP) { etaStart = now; etaStartP = value; }
+    const elapsed = (now - etaStart) / 1000;
+    const progressed = value - etaStartP;
+    if (elapsed > 1.5 && progressed > 0.01 && value > 0.02 && value < 0.995) {
+      label = `${pct}%　残り ${formatEta(elapsed * (1 - value) / progressed)}`;
+    }
+  } else {
+    resetEta();
+  }
+  progressLabel.textContent = label;
 }
 function showProgress(show) {
   progressWrap.hidden = !show;
-  if (show) setProgress(0);
+  if (show) { resetEta(); setProgress(0); }
 }
 function showCancelBtn(show) { cancelExportBtn.hidden = !show; }
 
@@ -952,7 +978,7 @@ async function doExport({ xOptimize }) {
   try {
     const blob = await exportVideo(currentFile, cutRanges, video.duration, {
       onStatus: (msg) => { setStatus(msg); },
-      onProgress: (p) => setProgress(p),
+      onProgress: (p, info) => setProgress(p, info),
       hasAudio: getHasAudio(),
       xOptimize,
       format: formatSelect.value,
@@ -1267,7 +1293,7 @@ async function doCombinedExport() {
   try {
     const blob = await exportConcat(
       clips.map((c) => ({ file: c.file, ranges: c.ranges, duration: c.duration, hasAudio: c.hasAudio })),
-      { onStatus: (m) => setStatus(m), onProgress: (p) => setProgress(p), aspect: aspectSelect.value }
+      { onStatus: (m) => setStatus(m), onProgress: (p, info) => setProgress(p, info), aspect: aspectSelect.value }
     );
     setProgress(1);
     const url = URL.createObjectURL(blob);

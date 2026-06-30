@@ -368,14 +368,16 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   // Scoped to this function only: the stream-copy path drives its own coarse,
   // monotonic onProgress, so letting both sources write the same bar there made
   // it oscillate. Removed in finally so it never leaks onto a later export.
+  // determinate:true marks this as ffmpeg's REAL time-based progress (vs the coarse
+  // synthetic steps of the stream-copy path), so the UI can show a trustworthy ETA.
   const progressHandler = ({ progress }) => {
     if (typeof progress === 'number' && progress >= 0) {
-      onProgress(Math.max(0, Math.min(1, progress)));
+      onProgress(Math.max(0, Math.min(1, progress)), { determinate: true });
     }
   };
   ff.on('progress', progressHandler);
 
-  status('再エンコード中... (時間かかります)');
+  status('変換中（再エンコード）… 動画が長いほど時間がかかります');
   let code;
   try {
     code = await ff.exec(args);
@@ -633,10 +635,10 @@ async function encodeClipToTs(ff, inputName, segments, hasAudio, canvas, outName
   );
 
   const progressHandler = ({ progress }) => {
-    if (typeof progress === 'number' && progress >= 0) onProgress(Math.max(0, Math.min(1, progress)));
+    if (typeof progress === 'number' && progress >= 0) onProgress(Math.max(0, Math.min(1, progress)), { determinate: true });
   };
   ff.on('progress', progressHandler);
-  status('再エンコード中...');
+  status('変換中（再エンコード）…');
   let code;
   try { code = await ff.exec(args); }
   finally { try { ff.off('progress', progressHandler); } catch (_) {} }
@@ -692,6 +694,11 @@ export async function exportConcat(clips, options = {}) {
       await encodeClipToTs(
         ff, inputName, segments, clipHasAudio, canvas, tsName,
         (msg) => status(`クリップ ${i + 1}/${N}: ${msg}`),
+        // Deliberately DROP the determinate flag here: the combined value
+        // (i+p)/(N+1) is a piecewise per-clip fraction, NOT ffmpeg's real
+        // time-proportional progress, so feeding it to the ETA estimator would
+        // extrapolate the whole job from clip 1's speed and show a misleading
+        // countdown. concat shows %+「クリップ i/N」status only — honest, no fake ETA.
         (p) => onProgress((i + p) / (N + 1))
       );
       tsFiles.push(tsName);
