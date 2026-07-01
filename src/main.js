@@ -87,6 +87,11 @@ const legalBtn = document.getElementById('legalBtn');
 const legalModal = document.getElementById('legalModal');
 const installBtn = document.getElementById('installBtn');
 
+// Editor cards hidden until a clip is loaded (keeps the first-load screen to the
+// 3-step empty-state hero instead of an empty waveform + toolbar + options wall).
+const timelineCard = document.getElementById('timelineCard');
+const infoCard = document.getElementById('infoCard');
+
 // Multi-clip ("highlights") refs
 const clipTrayCard = document.getElementById('clipTrayCard');
 const clipTrayList = document.getElementById('clipTrayList');
@@ -318,6 +323,10 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
   resetSubtitlePanel();
   video.src = clip.url;
   playerCard.classList.remove('empty');
+  // Reveal the editor cards BEFORE initTimeline() so the waveform canvas measures a
+  // real (non-zero) width. Hidden on the empty screen; restored here on every load.
+  if (timelineCard) timelineCard.hidden = false;
+  if (infoCard) infoCard.hidden = false;
   setStatus('波形を解析しています...');
   timelineContainer.classList.add('analyzing'); // spinner overlay until the waveform decode finishes (big clips take a few seconds)
   renderClipTray();
@@ -438,6 +447,9 @@ function resetToEmpty() {
   silenceBtn.disabled = true;
   captureFrameBtn.disabled = true;
   playerCard.classList.add('empty');
+  // Back to the empty screen — hide the editor cards again.
+  if (timelineCard) timelineCard.hidden = true;
+  if (infoCard) infoCard.hidden = true;
   resetSubtitlePanel();
   hideExportDone();
   clearBatchUrls();
@@ -972,6 +984,16 @@ function humanSize(bytes) {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 
+// Local HHMMSS stamp appended to export filenames so a re-export of the same clip a
+// moment later doesn't collide into "..._for_X (1).mp4", keeping the right file to
+// attach to X identifiable in a crowded Downloads folder. (Batch export additionally
+// appends a per-clip index so same-named clips finishing in the same second differ.)
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
 function triggerDownload(url, filename) {
   const a = document.createElement('a');
   a.href = url;
@@ -1086,7 +1108,7 @@ async function doExport({ xOptimize }) {
     const ext = xOptimize
       ? '.mp4'
       : (formatSelect.value === 'webm' ? '.webm' : (formatSelect.value === 'gif' ? '.gif' : '.mp4'));
-    const filename = xOptimize ? `${base}_for_X${ext}` : `${base}_trimmed${ext}`;
+    const filename = xOptimize ? `${base}_for_X_${stamp()}${ext}` : `${base}_trimmed_${stamp()}${ext}`;
     triggerDownload(url, filename);
     showExportDone({ blob, url, filename, hint: xOptimize
       ? 'Xにそのままアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。'
@@ -1393,7 +1415,7 @@ async function doCombinedExport() {
     );
     setProgress(1);
     const url = URL.createObjectURL(blob);
-    const filename = `ハイライト_${clips.length}本_for_X.mp4`;
+    const filename = `ハイライト_${clips.length}本_for_X_${stamp()}.mp4`;
     triggerDownload(url, filename);
     showExportDone({ blob, url, filename,
       hint: 'つなげたハイライトをXにアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
@@ -1467,7 +1489,7 @@ async function doExportEach() {
         });
         const url = URL.createObjectURL(blob); batchUrls.push(url);
         const base = (clip.name || `clip${i + 1}`).replace(/\.[^.]+$/, '');
-        triggerDownload(url, `${base}_for_X.mp4`);
+        triggerDownload(url, `${base}_for_X_${stamp()}_${i + 1}.mp4`);
         okCount++;
       } catch (err) {
         if (err && err.message && err.message.includes('__CANCELLED__')) { cancelled = true; break; }

@@ -832,6 +832,14 @@ function updatePlayhead() {
   const x = timeToX(videoEl.currentTime, rect);
   playhead.style.left = x + 'px';
   curTimeEl.textContent = formatTime(videoEl.currentTime);
+  // Keep the I/O mark-in guide pinned to its real time. showMarkInAt() places it
+  // once; without this it drifts off the true time when the viewport changes
+  // (zoom/pan/reset/resize all funnel through updatePlayhead). Display-only: it
+  // reads the time stored on the element, touches no range math or history.
+  if (markInLine && markInLine.style.display !== 'none') {
+    const mt = parseFloat(markInLine.dataset.time);
+    if (Number.isFinite(mt)) markInLine.style.left = timeToX(mt, rect) + 'px';
+  }
 }
 
 function notify(opts) {
