@@ -1100,6 +1100,13 @@ onSelect((key, index) => {
 // (its own end would otherwise hide the export's bar and キャンセル button).
 let detectingSilence = false;
 function refreshSilenceBtn() { silenceBtn.disabled = exporting || detectingSilence || !currentFile || !getHasAudio(); }
+// ...and the other way round: no export starts while 無音検出 runs (the cuts it is about to add would be
+// missing from the export, and both would fight over the progress bar).
+function silenceBusy() {
+  if (!detectingSilence) return false;
+  setStatus('無音検出が終わってから、もう一度書き出してください');
+  return true;
+}
 silenceBtn.addEventListener('click', async () => {
   if (exporting || detectingSilence) return;
   const buf = getAudioBuffer();
@@ -1440,7 +1447,7 @@ exportBtn.addEventListener('click', () => doExport({ xOptimize: false }));
 xExportBtn.addEventListener('click', () => doExport({ xOptimize: true }));
 
 async function doExport({ xOptimize }) {
-  if (!currentFile || exporting) return;
+  if (!currentFile || exporting || silenceBusy()) return;
   // Generic export needs at least one cut; the X export is also useful with zero
   // cuts (just re-containerizing a HEVC/PS5 clip into an X-uploadable MP4).
   if (!xOptimize && cutRanges.length === 0) return;
@@ -1744,7 +1751,7 @@ function updateCombinedBadge() {
 }
 
 async function doCombinedExport() {
-  if (clips.length < 2 || exporting) return;
+  if (clips.length < 2 || exporting || silenceBusy()) return;
   exporting = true; // claim immediately so the metadata-probe await below can't be re-entered
   const ac = activeClip();
   if (ac) ac.ranges = getRanges(); // commit the active clip's in-progress edits
@@ -1826,7 +1833,7 @@ let batchUrls = [];
 function clearBatchUrls() { for (const u of batchUrls) { try { URL.revokeObjectURL(u); } catch (_) {} } batchUrls = []; }
 
 async function doExportEach() {
-  if (clips.length < 2 || exporting) return;
+  if (clips.length < 2 || exporting || silenceBusy()) return;
   exporting = true; // claim BEFORE the metadata-probe await so it can't be re-entered
   exportBtn.disabled = true; xExportBtn.disabled = true; combineBtn.disabled = true;
   refreshSilenceBtn(); // 無音検出 shares the progress bar — off during an export
