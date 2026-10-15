@@ -48,7 +48,11 @@ const statusEl = document.getElementById('status');
 const progressWrap = document.getElementById('progressWrap');
 const progressFill = document.getElementById('progressFill');
 const progressLabel = document.getElementById('progressLabel');
+const progressStatus = document.getElementById('progressStatus');
 const cancelExportBtn = document.getElementById('cancelExportBtn');
+const exportError = document.getElementById('exportError');
+const exportNotice = document.getElementById('exportNotice');
+const exportTopStrip = document.getElementById('exportTopStrip');
 const rescueBanner = document.getElementById('rescueBanner');
 const rescueBtn = document.getElementById('rescueBtn');
 const rescueDismiss = document.getElementById('rescueDismiss');
@@ -129,6 +133,10 @@ const pcFwd1 = document.getElementById('pcFwd1');
 const pcFwd5 = document.getElementById('pcFwd5');
 const pcMarkIn = document.getElementById('pcMarkIn');
 const pcMarkOut = document.getElementById('pcMarkOut');
+const pcPrevSeg = document.getElementById('pcPrevSeg');
+const pcSegHead = document.getElementById('pcSegHead');
+const pcFrameBack = document.getElementById('pcFrameBack');
+const pcFrameFwd = document.getElementById('pcFrameFwd');
 const pcCur = document.getElementById('pcCur');
 const pcDur = document.getElementById('pcDur');
 
@@ -225,11 +233,62 @@ function setProgress(value, info) {
   }
   progressLabel.textContent = label;
 }
+let progressHideTimer = null; // the one pending "hide the bar 1.5 s after finishing" timer
 function showProgress(show) {
   progressWrap.hidden = !show;
-  if (show) { resetEta(); setProgress(0); }
+  if (show) {
+    // A new run cancels the previous run's pending hide, so that timer can't hide
+    // THIS run's bar / キャンセル button when it starts within 1.5 s.
+    clearTimeout(progressHideTimer);
+    progressHideTimer = null;
+    // A new run supersedes any lingering error card / notice from the previous attempt —
+    // the top strip should show one state at a time (progress → done | error | notice).
+    clearExportError();
+    clearExportNotice();
+    resetEta();
+    setProgress(0);
+  }
+  syncTopStrip();
+}
+// Hide the bar (and キャンセル) a moment after a run ends, so 100% is seen briefly.
+// reveal: the run ended with a result the user must see (done panel / 1本ずつ result) —
+// once the strip stops being pinned, bring it into view if it scrolled out of sight.
+function hideProgressLater(ms, reveal = false) {
+  clearTimeout(progressHideTimer);
+  progressHideTimer = setTimeout(() => {
+    progressHideTimer = null; showProgress(false); showCancelBtn(false);
+    if (reveal) revealTopStrip();
+  }, ms);
 }
 function showCancelBtn(show) { cancelExportBtn.hidden = !show; }
+// The top strip is shown only when one of its parts is, and pinned (sticky) only while
+// a run is in progress — error / done / notice cards then scroll away with the page
+// instead of covering it on phones. Toggled here in JS (not CSS :has()) so it also
+// works in browsers without :has().
+function syncTopStrip() {
+  if (!exportTopStrip) return;
+  const busy = !progressWrap.hidden;
+  const shown = busy || (exportError && !exportError.hidden) || (exportNotice && !exportNotice.hidden) || !exportDonePanel.hidden;
+  exportTopStrip.hidden = !shown;
+  exportTopStrip.classList.toggle('is-busy', busy);
+}
+// One rule for results the user must see when an export ends — done panel, error card,
+// 1本ずつ result: if the (no longer pinned) strip is out of view, scroll it into view
+// once. Not for a cancel the user pressed (no jump to the top after キャンセル).
+function revealTopStrip() {
+  if (!exportTopStrip || exportTopStrip.hidden) return;
+  if (exportTopStrip.getBoundingClientRect().top < 0) exportTopStrip.scrollIntoView({ block: 'nearest' });
+}
+// Who produced the result now in the strip: 'single' (書き出し / X用に書き出し — about the
+// clip that was open), 'multi' (つなげて / 1本ずつ — about every clip) or 'other' (共有).
+let stripResultFrom = null;
+// Opening / removing a clip drops only single-clip results. つなげて / 1本ずつ results stay
+// until ✕ or the next export — e.g. 「失敗: b.mp4、c.mp4」 must survive opening b to fix it.
+function clearSingleClipResult() {
+  if (stripResultFrom !== 'single') return;
+  clearExportError();
+  clearExportNotice();
+}
 
 // --- Clip helpers ---
 function isVideoFile(file) {
@@ -320,8 +379,12 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
   activeClipId = clip.id;
   currentFile = clip.file;
   autosaveWarned = false;
+  // A previous clip's 書き出し / X用 error card or notice doesn't apply to this one
+  // (つなげて / 1本ずつ results stay — they cover every clip).
+  clearSingleClipResult();
   resetSubtitlePanel();
   video.src = clip.url;
+  startFrameRateProbe(); // コマ送りの幅をこの動画のフレームレートで測り直す
   playerCard.classList.remove('empty');
   // Reveal the editor cards BEFORE initTimeline() so the waveform canvas measures a
   // real (non-zero) width. Hidden on the empty screen; restored here on every load.
@@ -355,7 +418,7 @@ async function doOpenClip(clipId, { promptRestore = false } = {}) {
     });
     clip.duration = video.duration;
     clip.hasAudio = getHasAudio();
-    silenceBtn.disabled = !getHasAudio();
+    refreshSilenceBtn();
     genSubBtn.disabled = !getHasAudio();
     captureFrameBtn.disabled = false;
     xExportBtn.disabled = false;
@@ -404,6 +467,8 @@ function removeClip(clipId, { silent = false } = {}) {
   if (idx < 0) return;
   const [removed] = clips.splice(idx, 1);
   try { if (removed.url) URL.revokeObjectURL(removed.url); } catch (_) {}
+  // A 書き出し / X用 result may be about the clip that just left — drop it.
+  clearSingleClipResult();
   if (activeClipId === clipId) {
     activeClipId = null;
     if (clips.length > 0) {
@@ -438,6 +503,7 @@ function clearAllClips() {
 // Return the editor to the no-clip empty state.
 function resetToEmpty() {
   if (video.src) { try { video.removeAttribute('src'); video.load(); } catch (_) {} }
+  fpsProbeGen++; detectedFrameSec = null; // forget the old clip's frame rate
   currentFile = null;
   cutRanges = [];
   clearRanges();
@@ -462,6 +528,171 @@ function resetToEmpty() {
 function setStatus(text) {
   statusEl.textContent = '';
   if (typeof text === 'string') statusEl.textContent = text;
+  // Mirror to the top strip's per-step status line so users watching the top
+  // progress bar don't have to scroll down to see "セグメント 2/3 を抽出中..." etc.
+  // Only meaningful while progress is visible; when hidden the empty line collapses.
+  if (progressStatus) {
+    progressStatus.textContent = (typeof text === 'string') ? text : '';
+  }
+}
+
+// --- Friendly export error ---
+// Translate ffmpeg / wasm exceptions into plain words a first-time user can act on.
+// The raw log stays available in a <details> so it can still be sent for support.
+// exporter.js appends the ffmpeg log tail ("\n\n--- FFmpeg log …") to every error,
+// and ffmpeg.wasm logs "Aborted()" at the end of EVERY run (its normal exit) —
+// so judge by the error itself (the head), not the log, or every failure reads as
+// "too big".
+function errorHead(raw) { return raw.split('\n\n--- FFmpeg log')[0]; }
+function isOutOfMemory(err) {
+  const raw = (err && err.message) ? err.message : String(err);
+  // WASM heap exhaustion — the classic ffmpeg.wasm failure on big game clips —
+  // or ffmpeg's own ENOMEM line anywhere in the log.
+  return /memory access out of bounds|out of memory|std::bad_alloc|Aborted\(\)|RangeError/i.test(errorHead(raw)) ||
+    /Cannot allocate memory/i.test(raw);
+}
+
+// button: which button failed — 'x' (X用に書き出し), 'normal' (書き出し), 'combine' (つなげて書き出し).
+// The advice must work for THAT button (X用 ignores 「解像度」, so don't suggest it there).
+// canUseNormalExport: the 書き出し button is only pressable with at least one range
+// marked, so only point X用 users at it when it can actually be pressed.
+function friendlyExportError(err, prefix, button = 'normal', canUseNormalExport = true) {
+  const raw = (err && err.message) ? err.message : String(err);
+  const p = prefix || '書き出し';
+  const head = errorHead(raw);
+
+  const oom = isOutOfMemory(err);
+  const emptyCut = head.includes('全部削除されています');
+  const ffExit = /exit\s+-?\d+/i.test(head); // ffmpeg-core's return code starts at -1
+  const loadFail = head.includes('FFmpeg の読み込みに失敗');
+
+  let title, body;
+  if (oom) {
+    title = '動画が長すぎる・大きすぎるため、ブラウザの中で書き出しきれませんでした';
+    const tips = button === 'x' ? [
+      'いらない所をもっとカットして、書き出す部分を短くする',
+      '2回に分けて書き出す（前半だけ・後半だけを、それぞれ書き出す）',
+      ...(canUseNormalExport ? ['上の「書き出し」ボタン（Xマークのない方）で、「解像度」を 720p にして書き出す（形式が MP4 なら、そのままXに投稿できます）'] : []),
+    ] : button === 'combine' ? [
+      'つなげるクリップを減らすか、それぞれをもっとカットして短くする',
+      '「1本ずつ書き出し（X用）」で、クリップを別々に書き出す',
+    ] : [
+      '「解像度」を 720p か 480p にして書き出す',
+      'いらない所をもっとカットして、書き出す部分を短くする',
+      '2回に分けて書き出す（前半だけ・後半だけを、それぞれ書き出す）',
+    ];
+    tips.push('ほかのタブや重いアプリを閉じてから、もう一度書き出す');
+    tips.push('それでもだめなときは、ページを読み込み直してから、もう一度書き出す');
+    body =
+      '書き出しはこのパソコンの中だけで行うため、長い動画やファイルの大きい動画だと、途中で止まってしまうことがあります。\n\n' +
+      '次のどれかをお試しください：\n' + tips.map((t) => '・' + t).join('\n');
+  } else if (emptyCut) {
+    title = 'ぜんぶカット範囲になっています';
+    body = '書き出す部分が残っていません。カット範囲を減らしてから、もう一度お試しください。';
+  } else if (loadFail) {
+    title = `${p}の準備に失敗しました`;
+    body = '通信が不安定だった可能性があります。ページを読み込み直してから、もう一度お試しください。';
+  } else if (ffExit) {
+    title = `${p}に失敗しました`;
+    body = 'この動画の形式に、うまく対応できなかったようです。別の動画で試してみてください。直らないときは、下の「詳しいログを見る」の中身を、画面下の「お問い合わせ（X）」から送ってください。';
+  } else {
+    title = `${p}に失敗しました`;
+    // exporter.js's own Japanese reasons (e.g. 「すべてのクリップが空です（カットで全部
+    // 消えています）。」) are already plain — show them as the card text.
+    body = /[ぁ-んァ-ヶ一-龠]/.test(head)
+      ? head
+      : 'もう一度お試しください。何度も失敗するときは、ページを読み込み直してください。';
+  }
+  return { title, body, raw, oom };
+}
+
+// Small ✕ (閉じる) button shared by the error card and the notice line.
+function makeStripCloseButton(onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn btn-ghost icon-only strip-close';
+  b.title = '閉じる';
+  b.setAttribute('aria-label', '閉じる');
+  b.textContent = '✕';
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function showExportError(err, opts = {}) {
+  const info = friendlyExportError(err, opts.prefix, opts.button, opts.canUseNormalExport !== false);
+  if (!exportError) return info;
+  const { title, body, raw } = info;
+  clearExportNotice();
+  stripResultFrom = opts.from || 'single';
+  exportError.innerHTML = '';
+  // Show the (empty) card first, then fill it, so screen readers announce the text.
+  // Mutually exclusive with the done panel.
+  if (exportDonePanel) exportDonePanel.hidden = true;
+  exportError.hidden = false;
+  syncTopStrip();
+
+  const h = document.createElement('div');
+  h.className = 'export-error-title';
+  h.textContent = `⚠ ${title}`;
+  exportError.appendChild(h);
+  exportError.appendChild(makeStripCloseButton(clearExportError));
+
+  if (body) {
+    const p = document.createElement('p');
+    p.className = 'export-error-body';
+    p.textContent = body;
+    exportError.appendChild(p);
+  }
+
+  if (raw && raw !== title) {
+    const det = document.createElement('details');
+    det.className = 'export-error-details';
+    const sum = document.createElement('summary');
+    sum.textContent = '詳しいログを見る';
+    det.appendChild(sum);
+    const pre = document.createElement('pre');
+    pre.textContent = raw;
+    det.appendChild(pre);
+    exportError.appendChild(det);
+  }
+
+  revealTopStrip();
+  return info;
+}
+
+function clearExportError() {
+  if (!exportError) return;
+  exportError.hidden = true;
+  exportError.innerHTML = '';
+  syncTopStrip();
+}
+
+// One-line result in the top strip (cancelled / 1本ずつ書き出し summary), so it shows
+// where the user was watching the progress bar — not only in the bottom #status.
+// kind: 'info' | 'success' | 'warn'; from: who produced it (see stripResultFrom).
+// No scrolling here: a cancel must not jump the page; the 1本ずつ result is revealed
+// when its run ends (hideProgressLater(…, true)).
+function showExportNotice(text, kind = 'info', from = 'single') {
+  if (!exportNotice) return;
+  clearExportError();
+  stripResultFrom = from;
+  exportNotice.className = 'export-notice' + (kind === 'success' ? ' is-success' : kind === 'warn' ? ' is-warn' : '');
+  exportNotice.innerHTML = '';
+  // Show first, then fill, so screen readers announce the text.
+  exportNotice.hidden = false;
+  syncTopStrip();
+  const span = document.createElement('span');
+  span.className = 'export-notice-text';
+  span.textContent = text;
+  exportNotice.appendChild(span);
+  exportNotice.appendChild(makeStripCloseButton(clearExportNotice));
+}
+
+function clearExportNotice() {
+  if (!exportNotice) return;
+  exportNotice.hidden = true;
+  exportNotice.innerHTML = '';
+  syncTopStrip();
 }
 
 // --- File input + drag-drop ---
@@ -650,6 +881,115 @@ function skip(delta) {
   const dur = isFinite(video.duration) ? video.duration : Infinity;
   video.currentTime = Math.max(0, Math.min(dur, video.currentTime + delta));
 }
+// 「区切り（セグメント境界）」= 0 / 動画の終わり / すべての範囲(カット・倍速)の start と end。
+// これらでタイムラインが分断されるので、その頭に飛べば区切りごとの頭出しになる。
+function getSegmentBoundaries() {
+  const dur = isFinite(video.duration) ? video.duration : 0;
+  const set = new Set([0]);
+  if (dur > 0) set.add(dur);
+  for (const r of getRanges()) {
+    if (isFinite(r.start)) set.add(Math.max(0, Math.min(dur, r.start)));
+    if (isFinite(r.end)) set.add(Math.max(0, Math.min(dur, r.end)));
+  }
+  const all = Array.from(set).sort((a, b) => a - b);
+  // プレビュー(P)中はカット部分が飛ばされる＝カットの頭へ飛んでも即カットの終わりへ戻される。
+  // カットの内側にある境界を外さないと、[ でカットより前へ戻れなくなる。
+  if (!previewMode) return all;
+  const cuts = getRanges().filter((r) => r.type === 'cut');
+  return all.filter((b) => !cuts.some((r) => b >= r.start && b < r.end));
+}
+// 「今の区切り」の頭 = 現在時刻より前の最寄りの境界
+function currentSegmentStart() {
+  const t = video.currentTime;
+  const dur = isFinite(video.duration) ? video.duration : 0;
+  const bs = getSegmentBoundaries();
+  let cur = 0;
+  for (const b of bs) {
+    // 動画の終わりは区切りの「頭」にはならない（最後まで再生し終えた時の「今の区切り」は最後の区切り）。
+    // これを除かないと、終わりで ] を押すと終わりへ飛ぶだけで何も再生されない。
+    if (dur > 0 && b >= dur - 1e-4) break;
+    if (b <= t + 1e-4) cur = b; else break;
+  }
+  return cur;
+}
+function playCurrentSegmentFromStart() {
+  const s = currentSegmentStart();
+  video.currentTime = s;
+  video.play().catch(() => {});
+}
+function jumpToPrevSegment() {
+  const t = video.currentTime;
+  const bs = getSegmentBoundaries();
+  // 「今の区切りの頭」を出し、それより 0.05 秒以上手前にいれば「今の頭」に戻す。
+  // 既にほぼ頭にいれば、そのひとつ手前の境界へ。
+  let curStart = 0;
+  for (const b of bs) {
+    if (b <= t + 1e-4) curStart = b; else break;
+  }
+  // 再生中は、次に押すまでに再生位置が進んでしまうので「ほぼ頭」の幅を 1 秒に広げる
+  // （0.05 秒のままだと、再生中は何度押しても同じ頭に戻るだけで前の区切りへ行けない）。
+  const atHead = video.paused ? 0.05 : 1.0;
+  if (t - curStart > atHead) {
+    video.currentTime = curStart;
+    return;
+  }
+  let prev = 0;
+  for (const b of bs) {
+    if (b < curStart - 1e-4) prev = b; else break;
+  }
+  video.currentTime = prev;
+}
+// コマ送り: 1 コマ = その動画の本当のフレームレート（再生中に測れたら）。測れるまでは
+// 30fps 相当（1/30 秒）。再生中は止めてから動かす。
+const FRAME_STEP_SEC = 1 / 30;
+let detectedFrameSec = null; // seconds per frame of the current clip, once measured
+let fpsProbeGen = 0;         // bumped on every clip change so stale callbacks stop
+let seekSerial = 0;          // any seek restarts the measuring window
+video.addEventListener('seeking', () => { seekSerial++; });
+const COMMON_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 90, 100, 119.88, 120, 144, 240];
+// Measure the frame rate while the clip plays at normal speed: count every frame that
+// went by — shown (rVFC presentedFrames) + skipped by the player (droppedVideoFrames) —
+// over ~1 s of media time (after 0.5 s of warm-up), so a 120fps clip on a 60Hz screen
+// still reads 120. (totalVideoFrames, the decoder count, also includes frames decoded
+// ahead and was ±1 frame off per second in tests.) Only at playbackRate 1, no pause /
+// seek inside the window. Snap to a common rate within 2%; an uncommon value is only
+// taken once two windows agree. No support / never played → stays on 1/30 s.
+function startFrameRateProbe() {
+  detectedFrameSec = null;
+  const gen = ++fpsProbeGen;
+  if (typeof video.requestVideoFrameCallback !== 'function' || typeof video.getVideoPlaybackQuality !== 'function') return;
+  let warm = null;     // first steady sample after (re)starting
+  let start = null;    // window start
+  let lastRaw = null;  // previous uncommon estimate, waiting for confirmation
+  const onFrame = (_now, meta) => {
+    if (gen !== fpsProbeGen) return;
+    const steady = !video.paused && !video.seeking && video.playbackRate === 1;
+    if (!steady || (warm && warm.seek !== seekSerial)) { warm = null; start = null; }
+    if (steady) {
+      const s = { t: meta.mediaTime, n: meta.presentedFrames + video.getVideoPlaybackQuality().droppedVideoFrames, seek: seekSerial };
+      if (!warm) warm = s;
+      else if (!start) { if (s.t - warm.t >= 0.5) start = s; }
+      else if (s.t - start.t >= 1.0) {
+        const fps = (s.n - start.n) / (s.t - start.t);
+        start = s;
+        if (Number.isFinite(fps) && fps >= 10 && fps <= 300) {
+          const best = COMMON_FPS.reduce((a, c) => (Math.abs(c - fps) < Math.abs(a - fps) ? c : a));
+          if (Math.abs(best - fps) / best <= 0.02) { detectedFrameSec = 1 / best; return; } // measured — stop
+          if (lastRaw && Math.abs(lastRaw - fps) / fps <= 0.02) { detectedFrameSec = 2 / (lastRaw + fps); return; }
+          lastRaw = fps;
+        }
+      }
+    }
+    video.requestVideoFrameCallback(onFrame);
+  };
+  video.requestVideoFrameCallback(onFrame);
+}
+function frameStep(dir) {
+  if (!video.paused) video.pause();
+  const dur = isFinite(video.duration) ? video.duration : Infinity;
+  const step = detectedFrameSec || FRAME_STEP_SEC;
+  video.currentTime = Math.max(0, Math.min(dur, video.currentTime + dir * step));
+}
 function markIn() {
   markInTime = video.currentTime;
   showMarkInAt(markInTime);
@@ -694,6 +1034,10 @@ pcFwd1.addEventListener('click', () => skip(1));
 pcFwd5.addEventListener('click', () => skip(5));
 pcMarkIn.addEventListener('click', markIn);
 pcMarkOut.addEventListener('click', markOut);
+pcPrevSeg.addEventListener('click', jumpToPrevSegment);
+pcSegHead.addEventListener('click', playCurrentSegmentFromStart);
+pcFrameBack.addEventListener('click', () => frameStep(-1));
+pcFrameFwd.addEventListener('click', () => frameStep(1));
 videoMinimap.addEventListener('click', (e) => {
   const dur = video.duration;
   if (!isFinite(dur) || dur <= 0) return;
@@ -752,13 +1096,19 @@ onSelect((key, index) => {
 });
 
 // --- Silence detect (uses settings) ---
+// 無音検出 shares the progress bar with exports, so it is off while an export runs
+// (its own end would otherwise hide the export's bar and キャンセル button).
+let detectingSilence = false;
+function refreshSilenceBtn() { silenceBtn.disabled = exporting || detectingSilence || !currentFile || !getHasAudio(); }
 silenceBtn.addEventListener('click', async () => {
+  if (exporting || detectingSilence) return;
   const buf = getAudioBuffer();
   if (!buf) {
     setStatus('音声トラックがないので無音検出できません。');
     return;
   }
-  silenceBtn.disabled = true;
+  detectingSilence = true;
+  refreshSilenceBtn();
   showProgress(true);
   setStatus('無音区間を検出中（長い動画は時間がかかります）...');
   try {
@@ -778,8 +1128,9 @@ silenceBtn.addEventListener('click', async () => {
     console.error('[silence detect] error:', err);
     setStatus('無音検出エラー: ' + (err.message || err));
   } finally {
-    silenceBtn.disabled = false;
-    setTimeout(() => showProgress(false), 800);
+    detectingSilence = false;
+    refreshSilenceBtn();
+    if (!exporting) hideProgressLater(800); // an export started meanwhile owns the bar now
   }
 });
 
@@ -975,6 +1326,9 @@ function clearLastExport() {
 function hideExportDone() {
   exportDonePanel.hidden = true;
   clearLastExport();
+  clearExportError();
+  clearExportNotice();
+  syncTopStrip();
 }
 
 function humanSize(bytes) {
@@ -1007,7 +1361,13 @@ function showExportDone({ blob, url, filename, hint }) {
   // Drop any previous result (revokes its URL); the new one stays alive until the
   // panel is closed, the next export starts, or the project is reset.
   clearLastExport();
+  // Mutually exclusive with the friendly-error card / notice in the same top slot.
+  clearExportError();
+  clearExportNotice();
   lastExport = { url, blob, filename };
+  // Show the panel first, then fill in the file name / hint, so screen readers announce it.
+  exportDonePanel.hidden = false;
+  syncTopStrip();
   const size = humanSize(blob.size);
   exportDoneMeta.textContent = size ? `${filename}（${size}）` : filename;
   exportDoneHint.textContent = hint || '';
@@ -1019,7 +1379,6 @@ function showExportDone({ blob, url, filename, hint }) {
     canShare = !!(navigator.canShare && navigator.canShare({ files: [probe] }));
   } catch (_) { canShare = false; }
   exportShareBtn.hidden = !canShare;
-  exportDonePanel.hidden = false;
 }
 
 exportRedownloadBtn.addEventListener('click', () => {
@@ -1032,14 +1391,18 @@ exportShareBtn.addEventListener('click', async () => {
   try {
     const file = new File([lastExport.blob], lastExport.filename, { type: lastExport.blob.type || 'video/mp4' });
     if (navigator.canShare && !navigator.canShare({ files: [file] })) {
-      setStatus('このブラウザはファイル共有に対応していません。「もう一度ダウンロード」をお使いください。');
+      const msg = 'このブラウザはファイル共有に対応していません。「もう一度ダウンロード」をお使いください。';
+      setStatus(msg);
+      showExportNotice(msg, 'warn', 'other'); // next to the done panel, where 共有… was pressed
       return;
     }
     await navigator.share({ files: [file], title: 'QuickTrimmer' });
   } catch (err) {
     if (err && err.name === 'AbortError') return; // user dismissed the share sheet
     console.error('[share] error:', err);
-    setStatus('共有できませんでした。「もう一度ダウンロード」をお使いください。');
+    const msg = '共有できませんでした。「もう一度ダウンロード」をお使いください。';
+    setStatus(msg);
+    showExportNotice(msg, 'warn', 'other');
   }
 });
 
@@ -1085,6 +1448,7 @@ async function doExport({ xOptimize }) {
   exporting = true;
   exportBtn.disabled = true;
   xExportBtn.disabled = true;
+  refreshSilenceBtn(); // 無音検出 shares the progress bar — off during an export
   hideExportDone(); // clear any previous result panel (and revoke its URL)
   const activeBtn = xOptimize ? xExportBtn : exportBtn;
   const originalHTML = activeBtn.innerHTML;
@@ -1115,7 +1479,7 @@ async function doExport({ xOptimize }) {
       : 'ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
     setStatus('書き出し完了！');
     notifyExportDone(xOptimize ? 'X用の書き出しが完了しました' : '書き出しが完了しました');
-    setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
+    hideProgressLater(1500, true); // keep the done panel in view once it stops being pinned
   } catch (err) {
     console.error('[export] error:', err);
     showProgress(false);
@@ -1123,18 +1487,20 @@ async function doExport({ xOptimize }) {
     setStatus('');
     if (err && err.message && err.message.includes('__CANCELLED__')) {
       setStatus('書き出しをキャンセルしました');
+      showExportNotice('書き出しをキャンセルしました');
     } else {
-      const pre = document.createElement('pre');
-      pre.style.whiteSpace = 'pre-wrap';
-      pre.style.fontFamily = 'monospace';
-      pre.style.fontSize = '12px';
-      pre.style.color = '#A24D2E';
-      pre.style.marginTop = '6px';
-      pre.textContent = '書き出しに失敗:\n' + (err.message || String(err));
-      statusEl.appendChild(pre);
+      // Friendly error into the top strip (in place of the old raw <pre> stapled
+      // to the bottom #status). The raw log is still available inside the card.
+      const info = showExportError(err, { prefix: '書き出し', button: xOptimize ? 'x' : 'normal', canUseNormalExport: cutRanges.length > 0 });
+      // After a real out-of-memory crash the ffmpeg.wasm engine can be left broken.
+      // Drop it (cancelExport() just terminates the worker) so the next try loads a
+      // fresh one instead of failing again in the same tab.
+      if (info && info.oom) cancelExport();
+      setStatus('');
     }
   } finally {
     exporting = false;
+    refreshSilenceBtn();
     exportBtn.disabled = cutRanges.length === 0;
     xExportBtn.disabled = !currentFile;
     activeBtn.innerHTML = originalHTML;
@@ -1395,7 +1761,10 @@ async function doCombinedExport() {
   // silently dropped from the combine — fail loudly with the offending names instead.
   const unmeasurable = clips.filter((c) => !(c.duration > 0));
   if (unmeasurable.length) {
-    setStatus('次のクリップの長さを取得できませんでした（壊れている可能性）: ' + unmeasurable.map((c) => c.name).join('、'));
+    const reason = '次のクリップの長さを取得できませんでした（壊れている可能性）: ' + unmeasurable.map((c) => c.name).join('、');
+    setStatus(reason);
+    hideExportDone(); // drop the previous result (and its file in memory) first, like the other failure paths
+    showExportError(new Error(reason), { prefix: '結合', button: 'combine', from: 'multi' }); // same card as other 結合 failures
     exporting = false; updateCombinedUI(); // release the claim taken above
     return;
   }
@@ -1403,6 +1772,7 @@ async function doCombinedExport() {
   exportBtn.disabled = true;
   xExportBtn.disabled = true;
   combineBtn.disabled = true;
+  refreshSilenceBtn(); // 無音検出 shares the progress bar — off during an export
   hideExportDone(); // clear any previous result panel (and revoke its URL)
   const originalHTML = combineBtn.innerHTML;
   combineBtn.textContent = '処理中...';
@@ -1421,7 +1791,7 @@ async function doCombinedExport() {
       hint: 'つなげたハイライトをXにアップロードできます。ダウンロードフォルダを確認してください。見当たらないときは下のボタンでやり直せます。' });
     setStatus('結合して書き出し完了！');
     notifyExportDone('ハイライトの結合・書き出しが完了しました');
-    setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
+    hideProgressLater(1500, true);
   } catch (err) {
     console.error('[combine] error:', err);
     showProgress(false);
@@ -1429,18 +1799,15 @@ async function doCombinedExport() {
     setStatus('');
     if (err && err.message && err.message.includes('__CANCELLED__')) {
       setStatus('書き出しをキャンセルしました');
+      showExportNotice('書き出しをキャンセルしました', 'info', 'multi');
     } else {
-      const pre = document.createElement('pre');
-      pre.style.whiteSpace = 'pre-wrap';
-      pre.style.fontFamily = 'monospace';
-      pre.style.fontSize = '12px';
-      pre.style.color = '#A24D2E';
-      pre.style.marginTop = '6px';
-      pre.textContent = '結合に失敗:\n' + (err.message || String(err));
-      statusEl.appendChild(pre);
+      const info = showExportError(err, { prefix: '結合', button: 'combine', from: 'multi' });
+      if (info && info.oom) cancelExport(); // drop a possibly-broken engine (see doExport)
+      setStatus('');
     }
   } finally {
     exporting = false;
+    refreshSilenceBtn();
     exportBtn.disabled = cutRanges.length === 0;
     xExportBtn.disabled = !currentFile;
     combineBtn.innerHTML = originalHTML;
@@ -1462,6 +1829,7 @@ async function doExportEach() {
   if (clips.length < 2 || exporting) return;
   exporting = true; // claim BEFORE the metadata-probe await so it can't be re-entered
   exportBtn.disabled = true; xExportBtn.disabled = true; combineBtn.disabled = true;
+  refreshSilenceBtn(); // 無音検出 shares the progress bar — off during an export
   if (exportEachBtn) exportEachBtn.disabled = true;
   const originalHTML = exportEachBtn ? exportEachBtn.innerHTML : '';
   try {
@@ -1475,7 +1843,7 @@ async function doExportEach() {
     if (exportEachBtn) exportEachBtn.textContent = '処理中...';
     showProgress(true); showCancelBtn(true);
     const M = clips.length;
-    let okCount = 0; const failed = []; let cancelled = false;
+    let okCount = 0; const failed = []; let cancelled = false; let anyOom = false;
     for (let i = 0; i < clips.length; i++) {
       const clip = clips[i];
       setStatus(`${i + 1}/${M}本目を書き出し中…`);
@@ -1495,20 +1863,31 @@ async function doExportEach() {
         if (err && err.message && err.message.includes('__CANCELLED__')) { cancelled = true; break; }
         console.error(`[exportEach] clip ${i + 1} failed:`, err);
         failed.push(clip.name || `${i + 1}本目`);
+        // A too-big clip can leave the ffmpeg.wasm engine broken — drop it so the
+        // remaining clips get a fresh one (see doExport).
+        if (isOutOfMemory(err)) { anyOom = true; cancelExport(); }
       }
     }
     setProgress(1);
+    // Show the result in the top strip too (where the progress bar was), not only
+    // in the bottom status line.
+    let summary, kind;
     if (cancelled) {
-      setStatus(`書き出しをキャンセルしました（${okCount}/${M}本まで完了）`);
+      summary = `書き出しをキャンセルしました（${okCount}/${M}本まで完了）`; kind = 'info';
     } else if (failed.length) {
-      setStatus(`${okCount}/${M}本を書き出しました。失敗: ${failed.join('、')}`);
+      summary = `${okCount}/${M}本を書き出しました。失敗: ${failed.join('、')}` +
+        (anyOom ? '（長すぎる・大きすぎる動画は、カットして短くしてからもう一度お試しください）' : '');
+      kind = 'warn';
     } else {
-      setStatus(`${M}本すべてX用に書き出しました！ダウンロードを確認してください。`);
+      summary = `${M}本すべてX用に書き出しました！ダウンロードを確認してください。`; kind = 'success';
       notifyExportDone(`${M}本の書き出しが完了しました`);
     }
-    setTimeout(() => { showProgress(false); showCancelBtn(false); }, 1500);
+    setStatus(summary);
+    showExportNotice(summary, kind, 'multi');
+    hideProgressLater(1500, !cancelled); // show the result once the bar hides — but no jump after a キャンセル
   } finally {
     exporting = false;
+    refreshSilenceBtn();
     exportBtn.disabled = cutRanges.length === 0;
     xExportBtn.disabled = !currentFile;
     if (exportEachBtn) exportEachBtn.innerHTML = originalHTML;
@@ -1580,6 +1959,18 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key.toLowerCase() === 'p' && !ctrl) {
     e.preventDefault();
     togglePreview();
+  } else if (e.key === ',' && !ctrl) {
+    e.preventDefault();
+    frameStep(-1);
+  } else if (e.key === '.' && !ctrl) {
+    e.preventDefault();
+    frameStep(1);
+  } else if (e.key === '[' && !ctrl) {
+    e.preventDefault();
+    jumpToPrevSegment();
+  } else if (e.key === ']' && !ctrl) {
+    e.preventDefault();
+    playCurrentSegmentFromStart();
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     if (tgt && tgt.tagName === 'BUTTON') return;
     e.preventDefault();

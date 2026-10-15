@@ -97,6 +97,38 @@
     </header>
 
     <main>
+      <!-- 書き出しの進捗・エラー・完了をぜんぶ上に集める（下のパネルへ視線を落とさなくて済むように）。
+           表示/非表示と「書き出し中だけ上に貼り付く」は main.js の syncTopStrip() が切り替える。
+           読み上げ（aria-live）は結果の枠だけ。進捗の％は読み上げない。 -->
+      <section class="export-top-strip" id="exportTopStrip" hidden>
+        <div id="progressWrap" hidden>
+          <div id="progressStatus" class="progress-status"></div>
+          <div class="progress-row">
+            <div id="progressBar"><div id="progressFill"></div></div>
+            <div id="progressLabel">0%</div>
+            <button id="cancelExportBtn" hidden>キャンセル</button>
+          </div>
+        </div>
+        <div id="exportError" class="export-error" aria-live="polite" hidden></div>
+        <!-- キャンセルや「1本ずつ書き出し」の結果など、ひとことのお知らせ -->
+        <div id="exportNotice" class="export-notice" aria-live="polite" hidden></div>
+        <div id="exportDonePanel" class="export-done" aria-live="polite" hidden>
+          <div class="export-done-head">
+            <span class="export-done-icon" aria-hidden="true">✓</span>
+            <div class="export-done-text">
+              <strong>書き出し完了</strong>
+              <span id="exportDoneMeta" class="export-done-meta"></span>
+            </div>
+            <button id="exportDoneClose" class="btn btn-ghost icon-only" type="button" title="閉じる">✕</button>
+          </div>
+          <p id="exportDoneHint" class="export-done-hint"></p>
+          <div class="export-done-actions">
+            <button id="exportRedownloadBtn" class="btn btn-primary" type="button" title="もう一度ダウンロードフォルダに保存">⬇ もう一度ダウンロード</button>
+            <button id="exportShareBtn" class="btn btn-x" type="button" hidden title="ほかのアプリに直接共有">共有…</button>
+          </div>
+        </div>
+      </section>
+
       <!-- 再生できない形式のレスキュー（④）: 読み込み失敗時に表示。その場でMP4へ変換 -->
       <section class="card rescue-banner" id="rescueBanner" hidden>
         <svg class="rescue-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -232,6 +264,17 @@
               <button class="pc-btn" id="pcMarkIn" type="button" title="カットしたい区間の先頭をここで指定 (I キー)">カット開始<kbd class="pc-kbd">I</kbd></button>
               <button class="pc-btn pc-mark-out" id="pcMarkOut" type="button" title="ここまでをカット範囲にする (O キー)。先に「カット開始」を押してね">カット終了<kbd class="pc-kbd">O</kbd></button>
             </div>
+            <!-- 細かい移動（区切り・1コマ）は2段目に。1段目の再生・カット開始/終了を押し出さない -->
+            <div class="pc-sub">
+              <div class="pc-group" title="カット/倍速の切れ目（区切り）ごとに移動">
+                <button class="pc-btn" id="pcPrevSeg" type="button" title="ひとつ前の区切りへ ([)">⇤ 前の区切り<kbd class="pc-kbd">[</kbd></button>
+                <button class="pc-btn" id="pcSegHead" type="button" title="今いる区切りの頭に戻って再生 (])">⤺ 区切りの頭から再生<kbd class="pc-kbd">]</kbd></button>
+              </div>
+              <div class="pc-group" title="1コマずつ動かす（細かい合わせ用）">
+                <button class="pc-btn" id="pcFrameBack" type="button" title="1コマ戻る (,)">◁| 1コマ<kbd class="pc-kbd">,</kbd></button>
+                <button class="pc-btn" id="pcFrameFwd" type="button" title="1コマ進む (.)">1コマ |▷<kbd class="pc-kbd">.</kbd></button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -280,7 +323,7 @@
             </div>
           </div>
         </div>
-        <div class="timeline-hint">🗑️ 色のついた部分が、書き出しのときに<b>削除</b>されます（残った部分がつながって1本になります）</div>
+        <div class="timeline-hint">🗑️ 色を付けてカット</div>
         <div id="timelineWrapper">
           <div id="timelineContainer">
             <canvas id="waveform"></canvas>
@@ -320,7 +363,7 @@
             </select>
           </label>
           <label class="opt" title="X用に正方形/縦へ。はみ出さず余白（黒帯）で収める（HUDを切らない）">
-            アスペクト
+            比
             <select id="aspectSelect">
               <option value="original" selected>元のまま</option>
               <option value="1:1">正方形 1:1</option>
@@ -383,28 +426,9 @@
         </details>
 
         <ul id="rangesList"></ul>
-        <div id="progressWrap" hidden>
-          <div id="progressBar"><div id="progressFill"></div></div>
-          <div id="progressLabel">0%</div>
-          <button id="cancelExportBtn" hidden>キャンセル</button>
-        </div>
+        <!-- 進捗バー・エラー・完了パネル・ダウンロードは #exportTopStrip（画面上部）に集約したので、
+             ここには何も置かない。#status は非エラーの短い状況テキスト用に残す。 -->
         <div id="status"></div>
-
-        <div id="exportDonePanel" class="export-done" hidden>
-          <div class="export-done-head">
-            <span class="export-done-icon" aria-hidden="true">✓</span>
-            <div class="export-done-text">
-              <strong>書き出し完了</strong>
-              <span id="exportDoneMeta" class="export-done-meta"></span>
-            </div>
-            <button id="exportDoneClose" class="btn btn-ghost icon-only" type="button" title="閉じる">✕</button>
-          </div>
-          <p id="exportDoneHint" class="export-done-hint"></p>
-          <div class="export-done-actions">
-            <button id="exportRedownloadBtn" class="btn btn-primary" type="button" title="もう一度ダウンロードフォルダに保存">⬇ もう一度ダウンロード</button>
-            <button id="exportShareBtn" class="btn btn-x" type="button" hidden title="ほかのアプリに直接共有">共有…</button>
-          </div>
-        </div>
       </section>
     </main>
 
@@ -427,6 +451,8 @@
         <div class="shortcuts">
           <div><span class="kbd">Space</span> 再生 / 一時停止</div>
           <div><span class="kbd">←</span> <span class="kbd">→</span> 1秒戻る / 進む（Shift で 5 秒、Ctrl で 0.1 秒）</div>
+          <div><span class="kbd">,</span> <span class="kbd">.</span> 1コマ戻る / 進む（細かい合わせ用）</div>
+          <div><span class="kbd">[</span> 前の区切りへ　<span class="kbd">]</span> 区切りの頭から再生（今いる区切りの最初から）</div>
           <div><span class="kbd">I</span> 現在位置を「開始」にマーク</div>
           <div><span class="kbd">O</span> 現在位置で「終了」してカット範囲を追加</div>
           <div><span class="kbd">Esc</span> マークをクリア</div>

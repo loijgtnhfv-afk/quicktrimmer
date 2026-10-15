@@ -193,6 +193,8 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 .pc-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pc-group { display: flex; align-items: center; gap: 6px; }
 .pc-mark { margin-left: auto; }
+/* 2段目: 区切り移動・コマ送り（1段目の再生・カット開始/終了を押し出さないよう、常に自分の行に置く） */
+.pc-sub { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .pc-btn {
   display: inline-flex;
   align-items: center;
@@ -298,6 +300,8 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 
 /* Rescue banner (④): browser-unplayable file → convert to MP4 in place */
 .rescue-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; background: var(--warning-soft); border: 1px solid var(--warning); }
+/* display:flex above would otherwise override the hidden attribute (banner always shown, 閉じる did nothing). */
+.rescue-banner[hidden] { display: none; }
 .rescue-icon { color: var(--warning); flex-shrink: 0; margin-top: 1px; }
 .rescue-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .rescue-title { font-size: 14px; font-weight: 700; color: var(--text-strong); }
@@ -636,21 +640,98 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
 
 #status { margin-top: 10px; font-size: 13px; color: var(--text-muted); min-height: 18px; }
 
-#progressWrap { margin-top: 14px; display: flex; align-items: center; gap: 12px; }
+/* Top strip: progress + friendly error + notice + done panel — right under the header. */
+.export-top-strip {
+  margin: 12px auto;
+  /* <main> is a flex column: with auto side margins the strip would shrink to its
+     content (a ~230px box with a ~50px progress bar), so pin it to full width. */
+  width: 100%;
+  max-width: 1200px;
+  /* safety net: never taller than the screen — scroll inside instead */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(40, 35, 25, 0.05);
+}
+/* main.js (syncTopStrip) hides the strip when it's empty and adds .is-busy while an
+   export / detection runs: only then is it pinned near the top. Error / done / notice
+   cards scroll away with the page instead of covering a phone screen. */
+.export-top-strip[hidden] { display: none; }
+.export-top-strip.is-busy { position: sticky; top: 8px; z-index: 40; }
+/* Neutralize the info-card-era margin-top on inner blocks; the strip's own
+   padding handles spacing. Stack with a small gap when two children coexist. */
+.export-top-strip #progressWrap,
+.export-top-strip .export-done,
+.export-top-strip .export-error { margin-top: 0; }
+.export-top-strip > :not([hidden]) ~ :not([hidden]) { margin-top: 10px; }
+
+#progressWrap { display: flex; flex-direction: column; gap: 6px; }
 #progressWrap[hidden] { display: none; }
+.progress-row { display: flex; align-items: center; gap: 12px; }
+.progress-status {
+  font-size: 12px; color: var(--text); font-weight: 500;
+  min-height: 16px; line-height: 1.35;
+}
+.progress-status:empty { display: none; }
 #progressBar { flex: 1; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
 #progressFill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent) 0%, #E07A52 100%); border-radius: 999px; transition: width 0.2s ease; }
 #progressLabel { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 36px; text-align: right; font-weight: 600; }
 
+/* Friendly export error — human-readable title + actionable body + raw ffmpeg
+   log tucked into a <details>. Same slot as done panel, mutually exclusive. */
+.export-error {
+  position: relative; /* anchors the ✕ (閉じる) button */
+  padding: 12px 14px;
+  border: 1px solid #E7C2A6;
+  background: #FDF3E9;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.export-error[hidden] { display: none; }
+.export-error-title {
+  font-weight: 700; color: #A24D2E; font-size: 14px; line-height: 1.4;
+  padding-right: 40px; /* room for the ✕ */
+}
+/* ✕ (閉じる) on the error card / notice. flex:none beats the phone-width `.btn { flex: 1 }`. */
+.export-top-strip .strip-close { flex: none; padding: 4px 9px; font-size: 13px; line-height: 1.2; }
+.export-error .strip-close { position: absolute; top: 8px; right: 8px; }
+
+/* One-line result notice in the top strip (cancelled / 1本ずつ書き出し summary). */
+.export-notice {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 8px 8px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-2);
+  font-size: 13px; line-height: 1.5; color: var(--text);
+}
+.export-notice[hidden] { display: none; }
+.export-notice-text { flex: 1; min-width: 0; }
+.export-notice.is-success { border-color: var(--positive); background: var(--positive-soft); }
+.export-notice.is-warn { border-color: #E7C2A6; background: #FDF3E9; }
+.export-error-body {
+  margin: 6px 0 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap;
+}
+.export-error-details { margin-top: 8px; font-size: 12px; }
+.export-error-details summary {
+  cursor: pointer; color: var(--text-muted); user-select: none;
+}
+.export-error-details pre {
+  margin: 6px 0 0; padding: 8px 10px; max-height: 180px; overflow: auto;
+  background: rgba(0, 0, 0, 0.04); border-radius: 4px;
+  font-size: 11px; white-space: pre-wrap; word-break: break-word;
+}
+
 /* Export-done panel */
-.export-done { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--positive); border-radius: var(--radius-sm); background: var(--positive-soft); }
+.export-done { padding: 14px 16px; border: 1px solid var(--positive); border-radius: var(--radius-sm); background: var(--positive-soft); }
 .export-done[hidden] { display: none; }
 .export-done-head { display: flex; align-items: flex-start; gap: 10px; }
 .export-done-icon { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--positive); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
 .export-done-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .export-done-text strong { font-size: 14px; color: var(--text-strong); }
 .export-done-meta { font-size: 12px; color: var(--text-muted); word-break: break-all; }
-.export-done-head .icon-only { flex-shrink: 0; margin: -4px -4px 0 0; }
+.export-done-head .icon-only { flex: none; margin: -4px -4px 0 0; } /* flex:none: don't stretch under the phone `.btn { flex: 1 }` */
 .export-done-hint { margin: 8px 0 0; font-size: 12px; color: var(--text); line-height: 1.5; }
 .export-done-actions { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .export-done-actions .btn-x[hidden] { display: none; }
@@ -811,6 +892,7 @@ main { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; marg
   body { padding: 16px 12px 40px; }
   header { flex-direction: column; align-items: flex-start; }
   .actions { width: 100%; flex-wrap: wrap; }
+  .actions .btn { min-width: max-content; } /* wrap to a 2nd row instead of cutting the button text off */
   .btn { flex: 1; justify-content: center; min-width: 0; }
   .toolbar { gap: 8px; }
   .toolbar-right { margin-left: 0; width: 100%; }
