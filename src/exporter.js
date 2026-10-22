@@ -44,7 +44,9 @@ const MT_FILTER_THREADS = String((import.meta.env && import.meta.env.VITE_QT_MT_
 
 const MT_LOAD_TIMEOUT_MS = 30000; // loading the multi-thread core (32 pthread workers) took 0.3 s here
 const MT_STALL_MS = 25000;        // no log line / progress at all for this long = stuck
-const MT_BLOCK_KEY = 'qt:mt-off'; // remembered deadlock on this device (localStorage, 7 days)
+// remembered deadlock on this device (localStorage, 7 days). "-v2": 81523e8 could store false
+// alarms (long head cut, frozen tab) under the old key — those are ignored.
+const MT_BLOCK_KEY = 'qt:mt-off-v2';
 const MT_BLOCK_DAYS = 7;
 
 // The one line shown when a job is redone on the single-thread core. Plain words only.
@@ -57,6 +59,7 @@ let loadingKind = null;
 let loadGeneration = 0;     // bumped by dropEngine()/cancelExport() to disown an in-flight load
 let lastActivity = 0;       // performance.now() of the engine's last log line / progress event
 let mtOffReason = null;     // set when the multi-thread core failed in this page session
+let jobRunning = false;     // an export / rescue is running (preload must not touch the engine then)
 let logBuffer = [];
 let cancelRequested = false;
 
@@ -226,9 +229,16 @@ async function execFF(ff, args, { threads = true, stallMs = MT_STALL_MS } = {}) 
   const a = threads ? withMtThreads(args) : args;
   touch();
   let timer = null;
+  let lastTick = performance.now();
   const stalled = new Promise((_, reject) => {
     timer = setInterval(() => {
-      if (performance.now() - lastActivity > stallMs) {
+      const now = performance.now();
+      // A hidden / frozen tab or a sleeping PC delays this timer (and the engine's messages):
+      // that time is not the engine's silence. Only time the page is visible and awake counts,
+      // so a stall is only ever declared — and remembered — while the user is looking.
+      if (now - lastTick > 5000 || (typeof document !== 'undefined' && document.hidden)) touch();
+      lastTick = now;
+      if (now - lastActivity > stallMs) {
         clearInterval(timer);
         timer = null;
         reject(new EngineFailure('stall'));
@@ -262,9 +272,10 @@ async function runJob(options, job, { formatErrors = true } = {}) {
   logBuffer = [];
   let kind = chooseEngine();
   let redo = false;
+  jobRunning = true;
   try {
     for (;;) {
-      if (!redo) status('FFmpeg を準備中...');
+      if (!redo) status('準備しています...');
       onProgress(0);
       try {
         let ff;
@@ -303,6 +314,8 @@ async function runJob(options, job, { formatErrors = true } = {}) {
     if (!formatErrors) throw err;
     const tail = tailLog(20);
     throw new Error(`${errText(err)}\n\n--- FFmpeg log (最後の20行) ---\n${tail || '(ログなし)'}`);
+  } finally {
+    jobRunning = false;
   }
 }
 
@@ -311,6 +324,9 @@ async function runJob(options, job, { formatErrors = true } = {}) {
 // errors are swallowed here (the export retries / falls back and surfaces them). Every
 // export terminates its engine at the end, so this never piles up instances.
 export function preloadFFmpeg() {
+  // Not while an export runs: a clip opened (or dropped) mid-export would otherwise drop the
+  // running engine — e.g. swap the single-thread redo for a new multi-thread one.
+  if (jobRunning) return;
   try { getFFmpeg(chooseEngine()).catch(() => {}); } catch (_) {}
 }
 
@@ -542,7 +558,7 @@ async function exportStreamCopy(ff, inputName, keep, status, onProgress) {
     for (let i = 0; i < keep.length; i++) {
       const seg = keep[i];
       const segName = `seg${i}${segExt}`;
-      status(`セグメント ${i + 1}/${keep.length} を抽出中（高速モード）...`);
+      status(keep.length === 1 ? 'そのままの画質で書き出しています...' : `そのままの画質で書き出しています（${i + 1}/${keep.length}）...`);
       onProgress((i + 0.5) / (keep.length + 1));
 
       const code = await execFF(ff, [
@@ -565,7 +581,7 @@ async function exportStreamCopy(ff, inputName, keep, status, onProgress) {
     } else {
       const listContent = segFiles.map((f) => `file '${f}'`).join('\n');
       await ff.writeFile('concat.txt', new TextEncoder().encode(listContent));
-      status('セグメントを結合中...');
+      status('つなげています...');
       onProgress(keep.length / (keep.length + 1));
       const code = await execFF(ff, [
         '-f', 'concat',
@@ -611,17 +627,19 @@ function buildReencodeFilter(segments, hasAudio, opts) {
   const normalize = !!opts.normalize;
   const height = opts.height;
   const format = opts.format || 'mp4';
+  const off = opts.offset || 0; // the input is opened with `-ss off` (see seekArgs): times are relative to it
+  const at = (t) => Math.max(0, t - off).toFixed(3);
   const parts = [];
   let concatInputs = '';
 
   segments.forEach((seg, i) => {
-    let vChain = `[0:v]trim=${seg.start.toFixed(3)}:${seg.end.toFixed(3)},setpts=PTS-STARTPTS`;
+    let vChain = `[0:v]trim=${at(seg.start)}:${at(seg.end)},setpts=PTS-STARTPTS`;
     if (seg.speed !== 1) vChain += `,setpts=PTS/${seg.speed}`;
     vChain += `[v${i}]`;
     parts.push(vChain);
 
     if (hasAudio) {
-      let aChain = `[0:a:0]atrim=${seg.start.toFixed(3)}:${seg.end.toFixed(3)},asetpts=PTS-STARTPTS`;
+      let aChain = `[0:a:0]atrim=${at(seg.start)}:${at(seg.end)},asetpts=PTS-STARTPTS`;
       if (seg.speed !== 1) {
         let s = seg.speed;
         while (s > 2.0) { aChain += `,atempo=2.0`; s /= 2.0; }
@@ -667,6 +685,17 @@ function buildReencodeFilter(segments, hasAudio, opts) {
   return parts.join(';');
 }
 
+// Start reading at the first kept part instead of the file's beginning. Without this, a long
+// cut at the start was decoded and thrown away first — slow, and the engine stayed silent the
+// whole time (37.9 s with the first 90 s of a 60 fps replay cut), which looks like a stall.
+// `-ss` on the input decodes from the keyframe before S and drops what's before S exactly
+// (accurate seek), and the timestamps then start at S — so the trims are shifted by S.
+function seekArgs(segments) {
+  const first = segments.length ? segments[0].start : 0;
+  if (!(first > 0)) return { off: 0, args: [] };
+  return { off: Number(ts(first)), args: ['-ss', ts(first)] };
+}
+
 // H.264 rate ceiling (Mbit/s). The X export never leaves 1080p, and 20 Mbit/s keeps even
 // X's longest free clip (2:20) at ≤ ~360 MB, well inside its 512 MB. The plain export
 // keeps the source size, so >1080p output gets a ceiling scaled by its pixel count.
@@ -685,14 +714,17 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   // GIF has no audio in output. Otherwise audio passthrough depends on source.
   const includeAudio = hasAudio && format !== 'gif';
 
+  const { off, args: seek } = seekArgs(segments);
   const filterComplex = buildReencodeFilter(segments, includeAudio, {
     normalize: options.normalizeAudio,
     height: options.height,
     aspect: options.aspect,
     format,
+    offset: off,
   });
 
   const args = [
+    ...seek,
     '-i', inputName,
     '-filter_complex', filterComplex,
     '-map', '[outv]',
@@ -719,10 +751,12 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
     args.push('-movflags', '+faststart');
   }
 
-  // Keep each frame's own time. ffmpeg's default for MP4 is a constant frame rate, which on a
-  // variable-frame-rate source (phones, some recorders) padded the gaps with duplicate frames
-  // (466 on a 35 s test clip) and let the picture drift up to 43 ms from the sound.
-  args.push('-fps_mode', 'passthrough');
+  // Keep each frame's own time but never duplicate. ffmpeg's default for MP4 is a constant frame
+  // rate, which on a variable-frame-rate source (phones, some recorders) padded the gaps with
+  // duplicate frames (466 on a 35 s test clip) and let the picture drift up to 43 ms from the
+  // sound. 'vfr' (not 'passthrough') also drops frames that a speed-up packs closer than the
+  // stream's frame rate — invisible anyway, and kept they pushed a 30 fps clip to 40 fps.
+  args.push('-fps_mode', 'vfr');
 
   const outExt = format === 'webm' ? '.webm' : (format === 'gif' ? '.gif' : '.mp4');
   args.push('-y', 'output' + outExt);
@@ -740,7 +774,7 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   };
   ff.on('progress', progressHandler);
 
-  status(options.statusText || '変換中（再エンコード）… 動画が長いほど時間がかかります');
+  status(options.statusText || '変換しています… 動画が長いほど時間がかかります');
   let code;
   try {
     code = await execFF(ff, args);
@@ -763,7 +797,7 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
 // extension). Output is always .mp4; resolution/audio-normalize are intentionally
 // not applied here so the lossless copy path stays available.
 async function exportForX(ff, inputName, ranges, duration, hasAudio, aspect, status, onProgress) {
-  status('コーデックを確認中...');
+  status('ファイルの形式を確認しています...');
   const { videoCodec, audioCodec, width, height } = await probeInput(ff, inputName);
   throwIfCancelled(); // a cancel during the probe must abort cleanly, not fall through
 
@@ -789,7 +823,7 @@ async function exportForX(ff, inputName, ranges, duration, hasAudio, aspect, sta
     if (exact) {
       try {
         const data = await exportStreamCopy(ff, inputName, keep, status, onProgress);
-        status('完了！X用MP4（画質ロスなし）');
+        status('完了！X用MP4（画質そのまま）');
         return new Blob([data.buffer], { type: 'video/mp4' });
       } catch (err) {
         if (isEngineFailure(err) || cancelRequested) throw err;
@@ -803,16 +837,18 @@ async function exportForX(ff, inputName, ranges, duration, hasAudio, aspect, sta
     }
   }
 
-  const why = !videoXok
-    ? `${videoCodec || '不明な動画コーデック'} → H.264`
-    : (!audioXok ? `${audioCodec || '音声'} → AAC`
-      : (aspectChange ? `${aspect === '9:16' ? '縦9:16' : '正方形1:1'} に変換`
-        : (overSized ? `${height}p → 1080p` : '倍速処理')));
-  status(exactCut ? EXACT_CUT_STATUS : `X用に再エンコード中（${why}）...`);
+  // Why it is converted, in plain words (no codec names / "re-encode"). The copy-failed
+  // fall-through has no specific reason: just "converting".
+  const why = exactCut ? EXACT_CUT_STATUS
+    : (!videoXok || !audioXok) ? 'X で再生できる形式に変換しています（少し時間がかかります）'
+      : aspectChange ? `${aspect === '9:16' ? '縦 9:16' : '正方形 1:1'} の画面に合わせて変換しています（少し時間がかかります）`
+        : overSized ? 'X に合う大きさ（1080p）に縮めて変換しています（少し時間がかかります）'
+          : hasSpeedup ? '倍速にするため、変換しています（少し時間がかかります）'
+            : '変換しています… 動画が長いほど時間がかかります';
+  status(why);
   const { data } = await exportReencode(
     ff, inputName, ranges, duration, audioPresent,
-    { format: 'mp4', height: overSized ? 1080 : 'original', aspect, normalizeAudio: false, xSafe: true,
-      statusText: exactCut ? EXACT_CUT_STATUS : undefined },
+    { format: 'mp4', height: overSized ? 1080 : 'original', aspect, normalizeAudio: false, xSafe: true, statusText: why },
     status, onProgress
   );
   status('完了！X用MP4');
@@ -876,12 +912,12 @@ async function exportVideoJob(ff, status, onProgress, file, ranges, duration, op
     if (exact) {
       try {
         const data = await exportStreamCopy(ff, inputName, keep, status, onProgress);
-        status('完了！（高速モード・画質ロスなし）');
+        status('完了！（画質そのまま）');
         return new Blob([data.buffer], { type: 'video/mp4' });
       } catch (err) {
         if (requestedMode === 'fast' || isEngineFailure(err) || cancelRequested) throw err;
         console.warn('[exporter] stream copy failed:', err);
-        status('高速モード失敗、再エンコードに切り替え...');
+        status('そのままでは書き出せなかったので、変換に切り替えています...');
         onProgress(0);
       }
     } else {
@@ -891,8 +927,15 @@ async function exportVideoJob(ff, status, onProgress, file, ranges, duration, op
   }
 
   throwIfCancelled();
+  // Whether there is sound comes from the file itself (like the X export), not from the
+  // editor's flag: that one is "the browser could decode the audio for the waveform", which
+  // fails on big recordings — and a converted export would then silently lose its sound.
+  // (Only if the probe saw nothing at all is the editor's flag used.)
+  const probe = await probeInput(ff, inputName);
+  throwIfCancelled();
+  const audioPresent = probe.audioCodec !== null || (probe.videoCodec === null && hasAudio);
   const { data, ext: outExt } = await exportReencode(
-    ff, inputName, ranges, duration, hasAudio,
+    ff, inputName, ranges, duration, audioPresent,
     { format, height, normalizeAudio, aspect, statusText: exactCut ? EXACT_CUT_STATUS : undefined,
       sourceWidth: options.sourceWidth, sourceHeight: options.sourceHeight },
     status, onProgress
@@ -949,7 +992,7 @@ async function rescueJob(ff, status, onProgress, file) {
 
   if (method !== 'remux') {
     method = 'transcode';
-    status('再生できる形式に変換しています（再エンコード・このPCの中だけで処理）…');
+    status('再生できる形式に変換しています（このPCの中だけで処理）…');
     const includeAudio = audioCodec !== null;
     const args = ['-i', inputName, '-map', '0:v:0'];
     if (includeAudio) args.push('-map', '0:a:0?');
@@ -995,16 +1038,17 @@ function canvasFor(aspect) {
 // Build the per-clip filter_complex that trims+speeds the clip's segments, concats
 // them, then conforms video to the common canvas (letterbox/pillarbox — never crop)
 // at 30fps, and audio to 48k stereo. Returns { filter, hasAudioOut }.
-function buildClipNormalizeFilter(segments, hasAudio, canvas) {
+function buildClipNormalizeFilter(segments, hasAudio, canvas, off = 0) {
   const [CW, CH] = canvas;
+  const at = (t) => Math.max(0, t - off).toFixed(3); // relative to the input's `-ss off` (seekArgs)
   const parts = [];
   segments.forEach((seg, i) => {
-    let v = `[0:v]trim=${seg.start.toFixed(3)}:${seg.end.toFixed(3)},setpts=PTS-STARTPTS`;
+    let v = `[0:v]trim=${at(seg.start)}:${at(seg.end)},setpts=PTS-STARTPTS`;
     if (seg.speed && seg.speed !== 1) v += `,setpts=PTS/${seg.speed}`;
     v += `[v${i}]`;
     parts.push(v);
     if (hasAudio) {
-      let a = `[0:a:0]atrim=${seg.start.toFixed(3)}:${seg.end.toFixed(3)},asetpts=PTS-STARTPTS`;
+      let a = `[0:a:0]atrim=${at(seg.start)}:${at(seg.end)},asetpts=PTS-STARTPTS`;
       if (seg.speed && seg.speed !== 1) {
         let s = seg.speed;
         while (s > 2.0) { a += `,atempo=2.0`; s /= 2.0; }
@@ -1033,9 +1077,10 @@ function buildClipNormalizeFilter(segments, hasAudio, canvas) {
 }
 
 async function encodeClipToTs(ff, inputName, segments, hasAudio, canvas, outName, status, onProgress) {
-  const { filter } = buildClipNormalizeFilter(segments, hasAudio, canvas);
+  const { off, args: seek } = seekArgs(segments);
+  const { filter } = buildClipNormalizeFilter(segments, hasAudio, canvas, off);
   const outSec = segmentsOutputDuration(segments);
-  const args = ['-i', inputName];
+  const args = [...seek, '-i', inputName];
   // Clips with no usable audio still get a silent stereo track — bounded to the
   // exact kept-segments length via `-t` — so EVERY intermediate has an identical
   // stream layout; otherwise concat-copy of mixed has-audio/no-audio segments breaks.
@@ -1061,7 +1106,7 @@ async function encodeClipToTs(ff, inputName, segments, hasAudio, canvas, outName
     if (p !== null) onProgress(p, { determinate: true });
   };
   ff.on('progress', progressHandler);
-  status('変換中（再エンコード）…');
+  status('変換しています…');
   let code;
   try { code = await execFF(ff, args); }
   finally { try { ff.off('progress', progressHandler); } catch (_) {} }

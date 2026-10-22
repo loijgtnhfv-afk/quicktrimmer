@@ -1636,15 +1636,20 @@ function updateMinimapPlayhead() {
 // Output length = full duration minus cut spans minus the time speed-ups save.
 // Size is a rough estimate (labelled 約): the kept fraction of the source bytes for a
 // lossless copy; for an export that will be converted — a cut in the middle (two or more
-// kept parts) or a speed-up — at most the converter's rate ceiling (exporter.js:
+// kept parts), a trimmed start or a speed-up — at most the converter's rate ceiling (exporter.js:
 // 20 Mbit/s video + 128 kbit/s audio), so a high-bitrate source isn't flagged as too big.
 const X_CONVERT_BYTES_PER_SEC = (20e6 + 128e3) / 8;
-function keptPartCount(ranges, dur) {
+// Kept parts of a cut-only edit, and where the first one starts (> 0 = the start is trimmed,
+// which is converted unless it lands exactly on a keyframe — counted as converted here).
+function keptParts(ranges, dur) {
   const cuts = ranges.filter((r) => r.type !== 'speedup').sort((a, b) => a.start - b.start);
-  let n = 0, cursor = 0;
-  for (const r of cuts) { if (r.start - cursor > 0.05) n++; cursor = Math.max(cursor, r.end); }
-  if (dur - cursor > 0.05) n++;
-  return n;
+  let n = 0, cursor = 0, firstStart = null;
+  for (const r of cuts) {
+    if (r.start - cursor > 0.05) { n++; if (firstStart === null) firstStart = cursor; }
+    cursor = Math.max(cursor, r.end);
+  }
+  if (dur - cursor > 0.05) { n++; if (firstStart === null) firstStart = cursor; }
+  return { n, firstStart: firstStart === null ? 0 : firstStart };
 }
 function updateXLimit() {
   if (!xLimitBadge) return;
@@ -1657,7 +1662,8 @@ function updateXLimit() {
     else cut += span;
   }
   const outDur = Math.max(0, dur - cut - saved);
-  const converted = saved > 0 || keptPartCount(cutRanges, dur) >= 2;
+  const kp = keptParts(cutRanges, dur);
+  const converted = saved > 0 || kp.n >= 2 || kp.firstStart > 0.05;
   const estBytes = converted
     ? Math.min(currentFile.size / dur, X_CONVERT_BYTES_PER_SEC) * outDur
     : currentFile.size * (outDur / dur);
