@@ -53,8 +53,57 @@ function dropBundledOrtWasm() {
   };
 }
 
+// The multi-thread ffmpeg core (@ffmpeg/core-mt, ~33 MB) comes from the npm package instead
+// of being committed under public/: `vercel --prod` uploads the source tree and Hobby caps
+// that upload at 100 MB (public/ is already ~81 MB), while node_modules are installed on the
+// build machine. Served at /ffmpeg/core-mt-<version>/ — same origin (fine under COEP
+// require-corp), covered by vercel.json's /ffmpeg/(.*) immutable rule and sw.js's cache-first
+// /ffmpeg/ branch. The version is part of the path, and the build fails if the installed
+// package is not that version (the URL must never point at different bytes).
+const MT_CORE_VERSION = '0.12.10';
+const MT_CORE_DIR = `ffmpeg/core-mt-${MT_CORE_VERSION}/`;
+const MT_CORE_FILES = {
+  'ffmpeg-core.js': 'text/javascript',
+  'ffmpeg-core.wasm': 'application/wasm',
+  'ffmpeg-core.worker.js': 'text/javascript',
+};
+function mtCoreSrcDir() {
+  const pkgDir = path.join(process.cwd(), 'node_modules', '@ffmpeg', 'core-mt');
+  const version = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8')).version;
+  if (version !== MT_CORE_VERSION) {
+    throw new Error(`@ffmpeg/core-mt ${version} is installed but ${MT_CORE_VERSION} is expected (vite.config.js MT_CORE_VERSION)`);
+  }
+  return path.join(pkgDir, 'dist', 'esm');
+}
+function ffmpegMtCore() {
+  return {
+    name: 'ffmpeg-mt-core',
+    configureServer(server) {
+      const srcDir = mtCoreSrcDir();
+      server.middlewares.use((req, res, next) => {
+        const prefix = '/' + MT_CORE_DIR;
+        if (!req.url || !req.url.startsWith(prefix)) return next();
+        const name = decodeURIComponent(req.url.split('?')[0].slice(prefix.length));
+        if (!Object.prototype.hasOwnProperty.call(MT_CORE_FILES, name)) return next();
+        res.setHeader('Content-Type', MT_CORE_FILES[name]);
+        for (const [k, v] of Object.entries(coopCoep)) res.setHeader(k, v);
+        fs.createReadStream(path.join(srcDir, name)).pipe(res);
+      });
+    },
+    generateBundle() {
+      const srcDir = mtCoreSrcDir();
+      for (const name of Object.keys(MT_CORE_FILES)) {
+        this.emitFile({ type: 'asset', fileName: MT_CORE_DIR + name, source: fs.readFileSync(path.join(srcDir, name)) });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [serveOrtRaw(), dropBundledOrtWasm()],
+  plugins: [serveOrtRaw(), dropBundledOrtWasm(), ffmpegMtCore()],
+  define: {
+    __QT_MT_CORE_DIR__: JSON.stringify(MT_CORE_DIR),
+  },
   server: {
     headers: coopCoep,
   },

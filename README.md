@@ -87,7 +87,7 @@ vercel --prod       # 本番デプロイ
 ### スタック
 
 - **Vite** (5.x) — 開発サーバとビルド
-- **ffmpeg.wasm** (`@ffmpeg/ffmpeg` 0.12.x + `@ffmpeg/core` 0.12.x ESM) — 動画処理
+- **ffmpeg.wasm** (`@ffmpeg/ffmpeg` 0.12.x + `@ffmpeg/core` 0.12.x ESM) — 動画処理。対応ブラウザでは並列版 `@ffmpeg/core-mt` 0.12.10 で変換し（約 5 倍速）、だめなときは 1 本処理版で自動でやり直す
 - **Web Audio API** — 波形描画、無音検出
 - **Canvas 2D** — 波形＋目盛り描画
 - **vanilla JS** — フレームワークなし
@@ -105,7 +105,7 @@ src/
 ├── thumbnails.js    # フレームサムネ生成（未統合）
 └── style.css        # スタイル全部
 public/
-├── ffmpeg/          # ffmpeg-core.js + ffmpeg-core.wasm
+├── ffmpeg/          # ffmpeg-core.js + ffmpeg-core.wasm（1 本処理版。並列版は npm の @ffmpeg/core-mt を build 時に /ffmpeg/core-mt-<版>/ へコピー）
 ├── icons/           # PWA アイコン
 ├── manifest.webmanifest
 └── sw.js            # Service worker（オフラインキャッシュ）
@@ -127,7 +127,7 @@ public/
 
 [GPL-3.0-or-later](LICENSE)。
 
-QuickTrimmer は動画処理に **ffmpeg.wasm**（`@ffmpeg/core`）を同梱しており、この ffmpeg ビルドは `libx264` / `libx265` を含む **GPL** ビルドです。これがブラウザへ配布されるため、本プロジェクト全体も GPL-3.0 で配布します。ffmpeg のソースは [ffmpegwasm/ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) および [ffmpeg.org](https://ffmpeg.org/) から入手できます。
+QuickTrimmer は動画処理に **ffmpeg.wasm**（`@ffmpeg/core` と並列版 `@ffmpeg/core-mt`）を同梱しており、この ffmpeg ビルドは `libx264` / `libx265` を含む **GPL** ビルドです。これがブラウザへ配布されるため、本プロジェクト全体も GPL-3.0 で配布します。ffmpeg のソースは [ffmpegwasm/ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) および [ffmpeg.org](https://ffmpeg.org/) から入手できます。
 
 ## ロードマップ
 

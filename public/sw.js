@@ -5,19 +5,24 @@
 //   - HTML / navigations  -> NETWORK-FIRST. The shell always reflects the
 //     latest deploy, so its hashed <script>/<link> references are current.
 //     Falls back to cache when offline.
-//   - Hashed build assets (/assets/*), ffmpeg core (/ffmpeg/*, ~32MB), icons,
+//   - Hashed build assets (/assets/*), ffmpeg cores (/ffmpeg/*, ~32MB each), icons,
 //     manifest -> CACHE-FIRST. These are content-hashed / immutable / large,
 //     so serving them from cache is safe and fast.
-//   - Bumping CACHE drops the poisoned old cache on activate, healing users
-//     who still carry the broken qt-v1.
-const CACHE = 'qt-v2';
+//   - Bumping CACHE drops the old cache on activate (qt-v1 was poisoned; qt-v2
+//     precached the single-thread core for everyone).
+//   - There are two ffmpeg cores (2026-10-20): the multi-thread one in
+//     /ffmpeg/core-mt-<version>/ for pages that can use it, the single-thread one in
+//     /ffmpeg/ for the rest and as the fall-back. Neither is precached here — a page
+//     only ever downloads the core it uses, and the cache-first branch keeps that one
+//     for offline use. (Falling back while offline needs the single-thread core in the
+//     cache; that rare case gets the usual "準備に失敗" message instead of making
+//     every multi-thread user download a second 32 MB.)
+const CACHE = 'qt-v3';
 const PRECACHE = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/icons/icon.svg',
-  '/ffmpeg/ffmpeg-core.js',
-  '/ffmpeg/ffmpeg-core.wasm',
 ];
 
 self.addEventListener('install', (event) => {

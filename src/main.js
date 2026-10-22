@@ -1472,6 +1472,9 @@ async function doExport({ xOptimize }) {
       height: heightSelect.value,
       aspect: aspectSelect.value,
       normalizeAudio: normalizeAudioChk.checked,
+      // lets a converted export keep enough bitrate for a >1080p source (exporter.js plainMaxrateMbps)
+      sourceWidth: video.videoWidth,
+      sourceHeight: video.videoHeight,
     });
     setProgress(1);
     const url = URL.createObjectURL(blob);
@@ -1631,7 +1634,18 @@ function updateMinimapPlayhead() {
 
 // --- X upload-limit badge (F3) ---
 // Output length = full duration minus cut spans minus the time speed-ups save.
-// Size is a rough estimate (kept fraction of the source bytes) and labelled 約.
+// Size is a rough estimate (labelled 約): the kept fraction of the source bytes for a
+// lossless copy; for an export that will be converted — a cut in the middle (two or more
+// kept parts) or a speed-up — at most the converter's rate ceiling (exporter.js:
+// 20 Mbit/s video + 128 kbit/s audio), so a high-bitrate source isn't flagged as too big.
+const X_CONVERT_BYTES_PER_SEC = (20e6 + 128e3) / 8;
+function keptPartCount(ranges, dur) {
+  const cuts = ranges.filter((r) => r.type !== 'speedup').sort((a, b) => a.start - b.start);
+  let n = 0, cursor = 0;
+  for (const r of cuts) { if (r.start - cursor > 0.05) n++; cursor = Math.max(cursor, r.end); }
+  if (dur - cursor > 0.05) n++;
+  return n;
+}
 function updateXLimit() {
   if (!xLimitBadge) return;
   const dur = video.duration;
@@ -1643,7 +1657,10 @@ function updateXLimit() {
     else cut += span;
   }
   const outDur = Math.max(0, dur - cut - saved);
-  const estBytes = currentFile.size * (outDur / dur);
+  const converted = saved > 0 || keptPartCount(cutRanges, dur) >= 2;
+  const estBytes = converted
+    ? Math.min(currentFile.size / dur, X_CONVERT_BYTES_PER_SEC) * outDur
+    : currentFile.size * (outDur / dur);
   const overDur = outDur > X_MAX_SECONDS;
   const overSize = estBytes > X_MAX_BYTES;
   const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;

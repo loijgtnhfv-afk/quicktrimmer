@@ -74,7 +74,7 @@ src/
 └── style.css        # スタイル全部
 
 public/
-├── ffmpeg/          # ffmpeg-core.js + ffmpeg-core.wasm(ESM 版、約 32MB)
+├── ffmpeg/          # ffmpeg-core.js + ffmpeg-core.wasm(ESM 版、約 32MB・1 本処理版)。並列版は npm の @ffmpeg/core-mt を vite.config.js の ffmpegMtCore が /ffmpeg/core-mt-<版>/ に出す(public/ に置くと vercel CLI のアップロード 100MB 上限を超えるため)
 ├── ort/             # ONNX Runtime wasm(字幕用、同一オリジン配信。COEP 対策)
 ├── icons/           # PWA アイコン SVG
 ├── manifest.webmanifest
@@ -92,7 +92,7 @@ tools/og-snapshot.html # OGP 画像作成用テンプレ（正本。スクショ
 詳細は Vault の `決定事項.md`。新セッションで「これ別のやり方どう?」と提案する前に**必ず一読**。
 
 1. **ローカル処理完結が差別化の核** — サーバー側 ffmpeg 案は不採用。アップロード不要を売る
-2. **ストリームコピーがデフォルト** — 倍速 / 形式変更 / 解像度変更 / 音量正規化 / 非 MP4 入力時のみ再エンコード
+2. **ストリームコピーがデフォルト** — 倍速 / 形式変更 / 解像度変更 / 音量正規化 / 非 MP4 入力時のみ再エンコード。**2026-10-20〜: カットした場面が残らないよう、真ん中にカットがある・頭がキーフレームに合わないときも変換**（コピーは 1 部分で正確になる時だけ＝カットなし・最後だけ切る・頭をキーフレームちょうどで切る）。変換は並列版 core（`@ffmpeg/core-mt`）で、止まったら 1 本処理版で自動でやり直す
 3. **stream copy 出力は常に `.mp4`** — 入力拡張子に依存しない。非 MP4 ファミリーは強制再エンコード分岐
 4. **範囲オーバーラップは "new-wins"** — `placeRangeInto()` ヘルパーで異なる type/speed の既存範囲を切り取る
 5. **外部入力は `validateExternalRange()` でサニタイズ** — `Number.isFinite` / クランプ / type whitelist / speed `[2, 4, 8]`
