@@ -634,7 +634,15 @@ function buildReencodeFilter(segments, hasAudio, opts) {
 
   segments.forEach((seg, i) => {
     let vChain = `[0:v]trim=${at(seg.start)}:${at(seg.end)},setpts=PTS-STARTPTS`;
-    if (seg.speed !== 1) vChain += `,setpts=PTS/${seg.speed}`;
+    if (seg.speed !== 1) {
+      // Keep every S-th frame before squeezing the times, so the sped-up frames stay one frame
+      // apart. Squeezed alone, two frames fell into each frame's slot and `-fps_mode vfr` dropped
+      // the extra one late: the picture ran 1.5 frames behind the sound in the sped-up part and
+      // 1 frame behind for the rest of the clip. (Speeds are 2/4/8; the combined export's fps=30
+      // already picks frames by time and never drifted.)
+      if (Number.isInteger(seg.speed)) vChain += `,select='not(mod(n,${seg.speed}))'`;
+      vChain += `,setpts=PTS/${seg.speed}`;
+    }
     vChain += `[v${i}]`;
     parts.push(vChain);
 
@@ -754,8 +762,9 @@ async function exportReencode(ff, inputName, ranges, duration, hasAudio, options
   // Keep each frame's own time but never duplicate. ffmpeg's default for MP4 is a constant frame
   // rate, which on a variable-frame-rate source (phones, some recorders) padded the gaps with
   // duplicate frames (466 on a 35 s test clip) and let the picture drift up to 43 ms from the
-  // sound. 'vfr' (not 'passthrough') also drops frames that a speed-up packs closer than the
-  // stream's frame rate — invisible anyway, and kept they pushed a 30 fps clip to 40 fps.
+  // sound. 'vfr' (not 'passthrough') also drops frames packed closer than the stream's frame
+  // rate — invisible anyway, and kept they pushed a 30 fps clip to 40 fps. (A speed-up now thins
+  // its frames itself in buildReencodeFilter: vfr dropping them came too late, see there.)
   args.push('-fps_mode', 'vfr');
 
   const outExt = format === 'webm' ? '.webm' : (format === 'gif' ? '.gif' : '.mp4');
